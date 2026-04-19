@@ -41,6 +41,15 @@ interface Kitchen {
   deliveryTime: string;
   description: string;
   image: string;
+  menu?: MenuItem[];
+}
+
+interface MenuItem {
+  id: string;
+  name: string;
+  price: number;
+  available: boolean;
+  category: 'thali' | 'addon';
 }
 
 interface CartItem {
@@ -49,6 +58,16 @@ interface CartItem {
   price: number;
   quantity: number;
   options?: any;
+}
+
+interface Order {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  items: CartItem[];
+  total: number;
+  status: 'pending' | 'preparing' | 'on-the-way' | 'delivered';
+  time: string;
 }
 
 // Mock Data
@@ -60,7 +79,13 @@ const KITCHENS: Kitchen[] = [
     rating: 4.6, 
     deliveryTime: "25-30 min",
     description: "Authentic Rajasthani Thalis & Desi Ghee preparations",
-    image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=800"
+    image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=800",
+    menu: [
+      { id: 't1', name: "Normal Thali", price: 80, available: true, category: 'thali' },
+      { id: 't2', name: "Special Thali", price: 120, available: true, category: 'thali' },
+      { id: 'a1', name: "Extra Roti", price: 7, available: true, category: 'addon' },
+      { id: 'a2', name: "Fresh Dahi", price: 20, available: true, category: 'addon' },
+    ]
   },
   { 
     id: '2', 
@@ -82,12 +107,55 @@ const KITCHENS: Kitchen[] = [
   }
 ];
 
+const INITIAL_ORDERS: Order[] = [
+  {
+    id: '0001',
+    customerName: 'Aman Deep',
+    customerPhone: '+91 98888 77777',
+    total: 167,
+    status: 'pending',
+    time: '12:45 PM',
+    items: [
+      { id: 't1', name: 'Normal Thali', price: 80, quantity: 1, options: { gravy: 'Paneer', dry: 'Bhindi', extraRoti: 2 } },
+      { id: 'a1', name: 'Extra Roti', price: 7, quantity: 1 }
+    ]
+  },
+  {
+    id: '0002',
+    customerName: 'Rahul Sharma',
+    customerPhone: '+91 70000 11111',
+    total: 120,
+    status: 'preparing',
+    time: '01:15 PM',
+    items: [
+      { id: 't2', name: 'Special Thali', price: 120, quantity: 1 }
+    ]
+  }
+];
+
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <AppContent />
     </BrowserRouter>
   );
+}
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    // Reset window scroll
+    window.scrollTo(0, 0);
+    // Reset mobile frame internal scrollables
+    const scrollables = document.querySelectorAll('.overflow-y-auto');
+    scrollables.forEach(el => {
+      el.scrollTo(0, 0);
+    });
+  }, [pathname]);
+
+  return null;
 }
 
 function AppContent() {
@@ -184,6 +252,7 @@ function AppContent() {
           >
             <Routes location={location}>
               <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} />} />
+              <Route path="/admin" element={<AdminScreen />} />
                 <Route 
                   path="/kitchen/:slug" 
                   element={
@@ -287,17 +356,18 @@ function AppContent() {
 
                       <div className="flex gap-3 justify-center py-4">
                         {otp.map((digit, i) => (
-                          <input 
-                            key={i}
-                            id={`otp-${i}`}
-                            type="text"
-                            maxLength={1}
-                            value={digit}
-                            onChange={(e) => handleOtpChange(e.target.value, i)}
-                            onKeyDown={(e) => handleOtpKeyDown(e, i)}
-                            className="w-14 h-16 bg-slate-50 border-2 border-slate-100 rounded-2xl text-center font-display text-2xl text-primary focus:border-primary focus:bg-white outline-none transition-all"
-                            placeholder="-"
-                          />
+                            <input 
+                              key={i}
+                              id={`otp-${i}`}
+                              type="tel"
+                              inputMode="numeric"
+                              maxLength={1}
+                              value={digit}
+                              onChange={(e) => handleOtpChange(e.target.value, i)}
+                              onKeyDown={(e) => handleOtpKeyDown(e, i)}
+                              className="w-14 h-16 bg-slate-50 border-2 border-slate-100 rounded-2xl text-center font-display text-2xl text-primary focus:border-primary focus:bg-white outline-none transition-all"
+                              placeholder="-"
+                            />
                         ))}
                       </div>
 
@@ -392,8 +462,11 @@ function HomeScreen({ isLoggedIn }: { isLoggedIn: boolean }) {
                 <div className="w-1.5 h-1.5 rounded-full bg-primary" />
               </div>
             </div>
-            
-            <button className="w-12 h-12 bg-white shadow-xl shadow-ink/5 rounded-2xl flex items-center justify-center border border-slate-50 active:scale-90 transition-transform">
+
+            <button 
+              onClick={() => navigate('/admin')}
+              className="w-12 h-12 bg-white shadow-xl shadow-ink/5 rounded-2xl flex items-center justify-center border border-slate-50 active:scale-90 transition-transform"
+            >
               <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                 <User className="w-5 h-5 text-primary" />
               </div>
@@ -440,7 +513,10 @@ function HomeScreen({ isLoggedIn }: { isLoggedIn: boolean }) {
                 <span className="text-[12px] font-bold text-slate-400 uppercase tracking-tight">Law Gate near LPU</span>
               </div>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-white border-2 border-primary/20 p-1 shadow-sm">
+            <div 
+              onClick={() => navigate('/admin')}
+              className="w-12 h-12 rounded-2xl bg-white border-2 border-primary/20 p-1 shadow-sm cursor-pointer active:scale-95 transition-transform"
+            >
               <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" className="w-full h-full rounded-xl" alt="profile" />
             </div>
           </header>
@@ -835,7 +911,7 @@ function SuccessScreen({ summary }: { summary: CartItem[] }) {
 
       <div className="space-y-2">
         <h1 className="text-4xl font-display tracking-tight text-secondary">Aww Yeah!</h1>
-        <p className="font-bold text-slate-500 bg-white/50 px-4 py-1 rounded-full inline-block">Order #STV-{Math.floor(Math.random() * 10000)}</p>
+        <p className="font-bold text-slate-500 bg-white/50 px-4 py-1 rounded-full inline-block">Order #0003</p>
       </div>
 
       <div className="w-full funky-card p-6 space-y-4">
@@ -860,15 +936,253 @@ function SuccessScreen({ summary }: { summary: CartItem[] }) {
         </div>
       </div>
 
-      <div className="w-full space-y-4">
-        <button 
-          onClick={() => navigate('/')}
-          className="w-full funky-btn-secondary h-16 text-xl"
-        >
-          TAKE ME HOME
-        </button>
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Thank you for choosing STUVA</p>
-      </div>
     </motion.div>
+  );
+}
+
+// --- Admin Section ---
+function AdminScreen() {
+  const [adminStep, setAdminStep] = useState<'AUTH' | 'DASHBOARD'>('AUTH');
+  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+  const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders');
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(KITCHENS[0].menu || []);
+
+  const updateOrderStatus = (orderId: string, nextStatus: Order['status']) => {
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
+  };
+
+  const toggleMenuItem = (id: string) => {
+    setMenuItems(prev => prev.map(item => item.id === id ? { ...item, available: !item.available } : item));
+  };
+
+  const updatePrice = (id: string, newPrice: number) => {
+    setMenuItems(prev => prev.map(item => item.id === id ? { ...item, price: newPrice } : item));
+  };
+
+  if (adminStep === 'AUTH') {
+    return (
+      <div className="flex-1 flex flex-col p-6 space-y-6 pt-20">
+        <div>
+          <h1 className="font-display text-4xl text-secondary">Kitchen Log</h1>
+          <p className="text-slate-400 font-bold text-sm">Enter admin credentials to start cooking</p>
+        </div>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Admin Number</label>
+            <input type="tel" placeholder="+91 99999 88888" className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none" />
+          </div>
+          <button 
+            onClick={() => setAdminStep('DASHBOARD')}
+            className="w-full funky-btn-primary h-14"
+          >
+            Enter Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Admin Header */}
+      <header className="px-6 pt-8 pb-4 flex justify-between items-center bg-white shrink-0">
+        <div className="flex items-center gap-3">
+          <div>
+            <h2 className="font-display text-2xl text-secondary leading-none">Thaat Baat</h2>
+            <p className="text-[10px] font-black text-primary uppercase tracking-widest mt-0.5">Admin Central</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+            <div className="bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/10 text-center">
+              <div className="text-[8px] font-black text-primary uppercase tracking-tight">Orders</div>
+              <div className="text-sm font-display leading-none">{orders.length}</div>
+            </div>
+            <div className="bg-green-50 px-3 py-1.5 rounded-lg border border-green-100 text-center">
+              <div className="text-[8px] font-black text-green-600 uppercase tracking-tight">Today</div>
+              <div className="text-sm font-display leading-none text-green-700">₹{orders.reduce((a, b) => a + b.total, 0)}</div>
+            </div>
+        </div>
+      </header>
+
+      {/* Tabs */}
+      <div className="px-6 flex gap-2 mb-4 shrink-0">
+        <button 
+          onClick={() => setActiveTab('orders')}
+          className={`px-6 py-2 rounded-xl font-display text-sm transition-all ${activeTab === 'orders' ? 'bg-secondary text-white shadow-lg shrink-0' : 'bg-slate-100 text-slate-400 shrink-0'}`}
+        >
+          Active Orders
+        </button>
+        <button 
+          onClick={() => setActiveTab('menu')}
+          className={`px-6 py-2 rounded-xl font-display text-sm transition-all ${activeTab === 'menu' ? 'bg-secondary text-white shadow-lg shrink-0' : 'bg-slate-100 text-slate-400 shrink-0'}`}
+        >
+          Menu Today
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 pb-20 no-scrollbar">
+        {activeTab === 'orders' ? (
+          <div className="space-y-4">
+            {orders.map(order => (
+              <div key={order.id} className="funky-card p-4 space-y-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-2">
+                       <span className="font-display text-lg text-secondary">#{order.id}</span>
+                       <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${
+                         order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 
+                         order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
+                         order.status === 'on-the-way' ? 'bg-purple-100 text-purple-700' :
+                         'bg-green-100 text-green-700'
+                       }`}>
+                         {order.status.replace('-', ' ')}
+                       </span>
+                    </div>
+                    <p className="text-xs font-bold text-slate-400">{order.customerName} • {order.time}</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-display text-xl text-primary">₹{order.total}</div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setSelectedOrder(order)}
+                    className="flex-1 bg-slate-100 py-2.5 rounded-xl font-display text-[10px] uppercase tracking-widest text-slate-500 hover:bg-slate-200"
+                  >
+                    View Details
+                  </button>
+                  {order.status === 'pending' && (
+                    <button onClick={() => updateOrderStatus(order.id, 'preparing')} className="flex-[2] bg-primary text-white py-2.5 rounded-xl font-display text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-95">Accept Order</button>
+                  )}
+                  {order.status === 'preparing' && (
+                    <button onClick={() => updateOrderStatus(order.id, 'on-the-way')} className="flex-[2] bg-blue-600 text-white py-2.5 rounded-xl font-display text-[10px] uppercase tracking-widest shadow-lg shadow-blue/20 transition-all active:scale-95">Out for Delivery</button>
+                  )}
+                  {order.status === 'on-the-way' && (
+                    <button onClick={() => updateOrderStatus(order.id, 'delivered')} className="flex-[2] bg-secondary text-white py-2.5 rounded-xl font-display text-[10px] uppercase tracking-widest shadow-lg shadow-secondary/20 transition-all active:scale-95">Mark Delivered</button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <section className="space-y-3">
+              <h3 className="font-display text-xl text-secondary">Main Thalis</h3>
+              <div className="space-y-2">
+                {menuItems.filter(i => i.category === 'thali').map(item => (
+                  <div key={item.id} className="bg-white border-2 border-slate-50 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+                    <div>
+                      <h4 className="font-display text-sm text-secondary">{item.name}</h4>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] font-bold text-slate-400">Price:</span>
+                        <input 
+                          type="number" 
+                          value={item.price} 
+                          onChange={(e) => updatePrice(item.id, Number(e.target.value))}
+                          className="w-16 bg-slate-50 rounded-lg px-2 py-1 text-xs font-display text-primary outline-none"
+                        />
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => toggleMenuItem(item.id)}
+                      className={`w-12 h-6 rounded-full transition-all relative ${item.available ? 'bg-primary' : 'bg-slate-200'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${item.available ? 'left-7' : 'left-1'}`} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h3 className="font-display text-xl text-secondary">Add-ons</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {menuItems.filter(i => i.category === 'addon').map(item => (
+                  <button 
+                    key={item.id}
+                    onClick={() => toggleMenuItem(item.id)}
+                    className={`p-4 rounded-2xl border-2 transition-all text-left ${item.available ? 'border-primary/20 bg-primary/5' : 'border-slate-100 bg-slate-50 grayscale'}`}
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-xs">🥘</div>
+                      {item.available && <CheckCircle2 className="w-4 h-4 text-primary" />}
+                    </div>
+                    <div className="font-display text-sm text-secondary truncate">{item.name}</div>
+                    <div className="font-display text-xs text-primary">₹{item.price}</div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+      </div>
+
+      {/* Order Details Modal */}
+      <AnimatePresence>
+        {selectedOrder && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-secondary/80 z-[200] backdrop-blur-sm" onClick={() => setSelectedOrder(null)} />
+            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[40px] p-8 z-[210] shadow-2xl space-y-6">
+               <div className="sheet-handle mb-4" />
+               <div className="flex justify-between items-start">
+                 <div>
+                   <h2 className="font-display text-3xl text-secondary">Order Details</h2>
+                   <p className="text-slate-400 font-bold">#{selectedOrder.id} • {selectedOrder.time}</p>
+                 </div>
+                 <button onClick={() => setSelectedOrder(null)} className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center"><Plus className="rotate-45 text-slate-400" /></button>
+               </div>
+
+               <div className="space-y-4">
+                 <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-3xl">
+                   <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-primary shadow-sm"><User /></div>
+                   <div>
+                     <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Customer</p>
+                     <p className="font-display text-lg text-secondary leading-none">{selectedOrder.customerName}</p>
+                   </div>
+                   <a href={`tel:${selectedOrder.customerPhone}`} className="ml-auto w-12 h-12 bg-primary text-white rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20 active:scale-90 transition-transform"><Phone /></a>
+                 </div>
+
+                 <div className="space-y-3 max-h-[300px] overflow-y-auto no-scrollbar py-2">
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Order Summary</p>
+                   {selectedOrder.items.map((item, i) => (
+                     <div key={i} className="flex justify-between items-start p-2 border-b border-slate-50 last:border-0">
+                       <div>
+                         <div className="flex items-center gap-2">
+                           <span className="font-display text-primary">{item.quantity}×</span>
+                           <span className="font-bold text-secondary">{item.name}</span>
+                         </div>
+                         {item.options && (
+                           <div className="text-[10px] text-slate-400 font-bold ml-6 mt-1 space-y-0.5">
+                             {item.options.gravy && <div>• {item.options.gravy} Gravy</div>}
+                             {item.options.dry && <div>• {item.options.dry} Dry</div>}
+                             {item.options.extraRoti > 0 && <div>• +{item.options.extraRoti} Extra Roti</div>}
+                             {item.options.withRice !== undefined && <div>• {item.options.withRice ? 'With Rice' : '5 Roti instead of rice'}</div>}
+                           </div>
+                         )}
+                       </div>
+                       <span className="font-display text-secondary">₹{item.price * item.quantity}</span>
+                     </div>
+                   ))}
+                 </div>
+                 
+                 <div className="pt-4 border-t-2 border-dashed border-slate-100 flex justify-between items-center px-2">
+                   <span className="font-display text-xl text-secondary">Total Amount</span>
+                   <span className="font-display text-3xl text-primary">₹{selectedOrder.total}</span>
+                 </div>
+               </div>
+
+               <button 
+                  className="w-full funky-btn-secondary h-16 text-lg"
+                  onClick={() => setSelectedOrder(null)}
+               >
+                 Close Summary
+               </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
