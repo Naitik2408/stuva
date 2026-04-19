@@ -99,6 +99,27 @@ function AppContent() {
   const [orderSummary, setOrderSummary] = useState<CartItem[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
+  const [otp, setOtp] = useState(['', '', '', '']);
+
+  const handleOtpChange = (value: string, index: number) => {
+    if (isNaN(Number(value))) return;
+    const newOtp = [...otp];
+    newOtp[index] = value.substring(value.length - 1);
+    setOtp(newOtp);
+
+    // Auto focus next
+    if (value && index < 3) {
+      const nextInput = document.getElementById(`otp-${index + 1}`);
+      nextInput?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (e: React.KeyboardEvent, index: number) => {
+    if (e.key === 'Backspace' && !otp[index] && index > 0) {
+      const prevInput = document.getElementById(`otp-${index - 1}`);
+      prevInput?.focus();
+    }
+  };
 
   const handleCheckoutClick = () => {
     if (isLoggedIn) {
@@ -162,7 +183,7 @@ function AppContent() {
             exit={{ opacity: 0 }}
           >
             <Routes location={location}>
-              <Route path="/" element={<HomeScreen />} />
+              <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} />} />
                 <Route 
                   path="/kitchen/:slug" 
                   element={
@@ -265,12 +286,16 @@ function AppContent() {
                       </div>
 
                       <div className="flex gap-3 justify-center py-4">
-                        {[1, 2, 3, 4].map(i => (
+                        {otp.map((digit, i) => (
                           <input 
                             key={i}
+                            id={`otp-${i}`}
                             type="text"
                             maxLength={1}
-                            className="w-14 h-16 bg-slate-50 border-2 border-slate-100 rounded-2xl text-center font-display text-2xl text-primary focus:border-primary focus:bg-white outline-none"
+                            value={digit}
+                            onChange={(e) => handleOtpChange(e.target.value, i)}
+                            onKeyDown={(e) => handleOtpKeyDown(e, i)}
+                            className="w-14 h-16 bg-slate-50 border-2 border-slate-100 rounded-2xl text-center font-display text-2xl text-primary focus:border-primary focus:bg-white outline-none transition-all"
                             placeholder="-"
                           />
                         ))}
@@ -336,7 +361,7 @@ function SearchBar() {
 }
 
 // --- Home Screen ---
-function HomeScreen() {
+function HomeScreen({ isLoggedIn }: { isLoggedIn: boolean }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const query = searchParams.get('q')?.toLowerCase() || '';
@@ -353,40 +378,96 @@ function HomeScreen() {
       exit={{ opacity: 0 }}
       className="flex-1 overflow-y-auto no-scrollbar bg-bg-app"
     >
-      <header className="px-6 pt-8 pb-4 flex justify-between items-start">
-        <div>
-          <h1 className="text-primary font-display text-4xl leading-none">Hi, Zesan</h1>
-          <div className="flex items-center gap-1.5 mt-1 opacity-80">
-            <MapPin className="w-4 h-4 text-primary" />
-            <span className="text-[12px] font-bold text-secondary uppercase tracking-tight">Riggs Road Northeast, 220</span>
-          </div>
-        </div>
-        <div className="w-12 h-12 rounded-2xl bg-white border-2 border-primary/20 p-1">
-          <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" className="w-full h-full rounded-xl" alt="profile" />
-        </div>
-      </header>
+      {!isLoggedIn ? (
+        // Guest Home View (Clean, Reverted Header)
+        <div className="space-y-6 pt-0">
+          <header className="px-6 py-8 flex items-center justify-between">
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5 text-slate-400 mb-1">
+                <MapPin className="w-3.5 h-3.5" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Delivering to</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="font-display text-lg text-secondary">Law Gate near LPU</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+              </div>
+            </div>
+            
+            <button className="w-12 h-12 bg-white shadow-xl shadow-ink/5 rounded-2xl flex items-center justify-center border border-slate-50 active:scale-90 transition-transform">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <User className="w-5 h-5 text-primary" />
+              </div>
+            </button>
+          </header>
 
-      <SearchBar />
+          <div className="px-6 space-y-2 mb-2">
+            <h1 className="font-display text-4xl text-secondary leading-tight">
+              Homemade magic, <br />
+              delivered to <span className="text-primary underline decoration-wavy underline-offset-8">you.</span>
+            </h1>
+            <p className="text-slate-400 font-bold text-sm">Authentic kitchens from your neighborhood.</p>
+          </div>
 
-      <main className="px-6 space-y-8 pb-12">
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-2xl text-secondary">
-              Top Kitchens
-            </h2>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            {filteredKitchens.length > 0 ? (
-              filteredKitchens.map(kitchen => (
-                <KitchenCard key={kitchen.id} kitchen={kitchen} onClick={() => navigate(`/kitchen/${kitchen.slug}`)} />
-              ))
-            ) : (
-              <div className="col-span-2 py-10 text-center opacity-50 font-bold">No kitchens found...</div>
-            )}
-          </div>
-        </section>
-      </main>
+          <SearchBar />
+
+          <section className="space-y-4">
+            <div className="px-6">
+              <h2 className="font-display text-2xl text-secondary">Explore Kitchens</h2>
+            </div>
+            <div className="px-6 grid grid-cols-2 gap-4 pb-12">
+              {filteredKitchens.length > 0 ? (
+                filteredKitchens.map(kitchen => (
+                  <KitchenCard 
+                    key={kitchen.id} 
+                    kitchen={kitchen} 
+                    onClick={() => navigate(`/kitchen/${kitchen.slug}`)} 
+                  />
+                ))
+              ) : (
+                <div className="col-span-2 py-10 text-center opacity-50 font-bold">No kitchens found...</div>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : (
+        // Logged-in Home View (Current perfect UI)
+        <div className="space-y-0">
+          <header className="px-6 pt-8 pb-4 flex justify-between items-start">
+            <div>
+              <h1 className="text-secondary font-display text-4xl leading-none">Hi, Zesan</h1>
+              <div className="flex items-center gap-1.5 mt-1">
+                <MapPin className="w-4 h-4 text-primary" strokeWidth={3} />
+                <span className="text-[12px] font-bold text-slate-400 uppercase tracking-tight">Law Gate near LPU</span>
+              </div>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-white border-2 border-primary/20 p-1 shadow-sm">
+              <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" className="w-full h-full rounded-xl" alt="profile" />
+            </div>
+          </header>
+
+          <SearchBar />
+
+          <main className="px-6 space-y-8 pb-12">
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-display text-2xl text-secondary">
+                  Top Kitchens
+                </h2>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                {filteredKitchens.length > 0 ? (
+                  filteredKitchens.map(kitchen => (
+                    <KitchenCard key={kitchen.id} kitchen={kitchen} onClick={() => navigate(`/kitchen/${kitchen.slug}`)} />
+                  ))
+                ) : (
+                  <div className="col-span-2 py-10 text-center opacity-50 font-bold">No kitchens found...</div>
+                )}
+              </div>
+            </section>
+          </main>
+        </div>
+      )}
     </motion.div>
   );
 }
