@@ -95,14 +95,32 @@ function AppContent() {
   const location = useLocation();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState<'AUTH' | 'OTP'>('AUTH');
   const [orderSummary, setOrderSummary] = useState<CartItem[]>([]);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
 
-  const placeOrder = () => {
+  const handleCheckoutClick = () => {
+    if (isLoggedIn) {
+      setOrderSummary([...cart]);
+      setCart([]);
+      navigate('/success');
+    } else {
+      setCheckoutStep('AUTH');
+      setShowCheckout(true);
+    }
+  };
+
+  const proceedToOtp = () => {
+    setCheckoutStep('OTP');
+  };
+
+  const confirmLoginAndOrder = () => {
+    setIsLoggedIn(true);
+    setIsReturningUser(true);
     setOrderSummary([...cart]);
     setCart([]);
     setShowCheckout(false);
-    setIsReturningUser(true);
     navigate('/success');
   };
 
@@ -145,23 +163,24 @@ function AppContent() {
           >
             <Routes location={location}>
               <Route path="/" element={<HomeScreen />} />
-              <Route 
-                path="/kitchen/:slug" 
-                element={
-                  <MenuScreen 
-                    onAddToCart={addToCart}
-                    cart={cart}
-                    updateQuantity={updateQuantity}
-                    onCheckout={() => setShowCheckout(true)}
-                  />
-                } 
-              />
+                <Route 
+                  path="/kitchen/:slug" 
+                  element={
+                    <MenuScreen 
+                      onAddToCart={addToCart}
+                      cart={cart}
+                      updateQuantity={updateQuantity}
+                      onCheckout={handleCheckoutClick}
+                      isLoggedIn={isLoggedIn}
+                    />
+                  } 
+                />
               <Route path="/success" element={<SuccessScreen summary={orderSummary} />} />
             </Routes>
           </motion.div>
         </AnimatePresence>
 
-        {/* Checkout Bottom Sheet */}
+        {/* Login & Checkout Bottom Sheet */}
         <AnimatePresence>
           {showCheckout && (
             <>
@@ -170,66 +189,110 @@ function AppContent() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setShowCheckout(false)}
-                className="absolute inset-0 bg-black/60 z-40"
+                className="absolute inset-0 bg-black/60 z-[110]"
               />
               <motion.div 
                 initial={{ y: "100%" }}
                 animate={{ y: 0 }}
                 exit={{ y: "100%" }}
                 transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                className="absolute bottom-0 left-0 right-0 bg-white rounded-t-sheet z-50 p-6 shadow-2xl"
+                className="absolute bottom-0 left-0 right-0 bg-white rounded-t-sheet z-[120] p-6 pt-2 shadow-2xl"
               >
-                <div className="sheet-handle" />
-                <h2 className="text-xl font-bold mb-1">Verify Order</h2>
-                <p className="text-[#666] mb-6 font-medium text-sm">Enter details to confirm delivery</p>
+                <div className="sheet-handle mb-6" />
                 
-                <div className="space-y-4 mb-8">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1">Phone Number</label>
-                    <div className="relative">
-                      < Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input 
-                        type="text" 
-                        defaultValue={isReturningUser ? "+91 91234 56789" : ""}
-                        placeholder="+91 98765 43210" 
-                        className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 text-sm font-medium"
-                      />
-                    </div>
-                  </div>
-                  
-                  {!isReturningUser && (
+                <AnimatePresence mode="wait">
+                  {checkoutStep === 'AUTH' ? (
                     <motion.div 
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      className="space-y-1.5"
+                      key="auth-step"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="space-y-6"
                     >
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1">Full Name</label>
-                      <div className="relative">
-                        <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input 
-                          type="text" 
-                          placeholder="John Doe" 
-                          className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 text-sm font-medium"
-                        />
+                      <div>
+                        <h2 className="text-2xl font-display text-secondary">Join STUVA</h2>
+                        <p className="text-slate-400 font-bold text-sm">Verify your number to place order</p>
                       </div>
+                      
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Phone Number</label>
+                          <div className="relative">
+                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
+                            <input 
+                              type="text" 
+                              defaultValue={isReturningUser ? "+91 91234 56789" : ""}
+                              placeholder="+91 98765 43210" 
+                              className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none"
+                            />
+                          </div>
+                        </div>
+                        
+                        {!isReturningUser && (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Full Name</label>
+                            <div className="relative">
+                              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
+                              <input 
+                                type="text" 
+                                placeholder="Zesan" 
+                                className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <button 
+                        onClick={proceedToOtp}
+                        className="w-full funky-btn-primary h-14 flex items-center justify-center gap-2"
+                      >
+                        Send OTP
+                        <ArrowRight className="w-5 h-5" />
+                      </button>
+                    </motion.div>
+                  ) : (
+                    <motion.div 
+                      key="otp-step"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="space-y-6"
+                    >
+                      <div>
+                        <h2 className="text-2xl font-display text-secondary">Verification Tag</h2>
+                        <p className="text-slate-400 font-bold text-sm">We sent a 4-digit code to your phone</p>
+                      </div>
+
+                      <div className="flex gap-3 justify-center py-4">
+                        {[1, 2, 3, 4].map(i => (
+                          <input 
+                            key={i}
+                            type="text"
+                            maxLength={1}
+                            className="w-14 h-16 bg-slate-50 border-2 border-slate-100 rounded-2xl text-center font-display text-2xl text-primary focus:border-primary focus:bg-white outline-none"
+                            placeholder="-"
+                          />
+                        ))}
+                      </div>
+
+                      <div className="text-center">
+                        <button className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">
+                          Resend Code in 00:29
+                        </button>
+                      </div>
+
+                      <button 
+                        onClick={confirmLoginAndOrder}
+                        className="w-full funky-btn-secondary h-14 flex items-center justify-center gap-2"
+                      >
+                        Confirm & Order
+                        <ShoppingBag className="w-5 h-5" />
+                      </button>
                     </motion.div>
                   )}
-                </div>
-
-                <div className="p-4 bg-primary/5 rounded-2xl border border-primary/10 mb-8">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-sm font-semibold text-primary">Order Total</span>
-                    <span className="text-lg font-bold text-slate-900">₹{cartTotal}</span>
-                  </div>
-                </div>
-
-                <button 
-                  onClick={placeOrder}
-                  className="w-full bg-primary text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/30 active:scale-95 transition-transform"
-                >
-                  Place My Order
-                  <ArrowRight className="w-5 h-5" />
-                </button>
+                </AnimatePresence>
+                <div className="h-4" />
               </motion.div>
             </>
           )}
@@ -360,12 +423,14 @@ function MenuScreen({
   onAddToCart, 
   cart, 
   updateQuantity,
-  onCheckout 
+  onCheckout,
+  isLoggedIn
 }: { 
   onAddToCart: (item: CartItem) => void;
   cart: CartItem[];
   updateQuantity: (id: string, delta: number) => void;
   onCheckout: () => void;
+  isLoggedIn: boolean;
 }) {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -491,9 +556,16 @@ function MenuScreen({
                 </div>
                 <div className="font-display text-lg tracking-wider">₹{cartTotal}</div>
               </div>
-              <div className="flex items-center gap-1 font-display text-md uppercase tracking-widest text-primary">
-                GO!
-                <span className="text-2xl leading-none">›</span>
+              <div className="flex flex-col items-end gap-0.5">
+                {!isLoggedIn && (
+                  <span className="text-[8px] font-black text-white/50 uppercase tracking-tighter mr-1">
+                    Login required to place order
+                  </span>
+                )}
+                <div className="flex items-center gap-1 font-display text-md uppercase tracking-widest text-primary">
+                  GO!
+                  <span className="text-2xl leading-none">›</span>
+                </div>
               </div>
             </button>
           </motion.div>
