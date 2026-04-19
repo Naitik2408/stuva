@@ -122,9 +122,9 @@ export default function App() {
   const cartCount = useMemo(() => cart.reduce((acc, curr) => acc + curr.quantity, 0), [cart]);
 
   return (
-    <div className="min-h-screen bg-gray-200 flex justify-center py-0 sm:py-8 items-center">
+    <div className="min-h-screen sm:bg-gray-200 flex justify-center items-center">
       {/* Mobile Frame */}
-      <div className="w-[375px] h-[812px] bg-white phone-frame relative overflow-hidden flex flex-col rounded-[40px]">
+      <div className="w-full h-screen bg-white relative overflow-hidden flex flex-col sm:w-[375px] sm:rounded-[40px] sm:border-[8px] sm:border-ink sm:shadow-2xl sm:my-0">
         
         <AnimatePresence mode="wait">
           {screen === 'home' && (
