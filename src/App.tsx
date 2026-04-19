@@ -17,15 +17,25 @@ import {
   Phone,
   User,
   Search,
+  Heart,
   Menu as MenuIcon
 } from "lucide-react";
-import { useState, useMemo, useEffect, Key } from "react";
+import { useState, useMemo, useEffect, Key, ChangeEvent } from "react";
+import React from "react";
+import { 
+  BrowserRouter, 
+  Routes, 
+  Route, 
+  useNavigate, 
+  useParams, 
+  useSearchParams, 
+  useLocation 
+} from "react-router-dom";
 
 // Types
-type Screen = 'home' | 'menu' | 'success';
-
 interface Kitchen {
   id: string;
+  slug: string;
   name: string;
   rating: number;
   deliveryTime: string;
@@ -45,6 +55,7 @@ interface CartItem {
 const KITCHENS: Kitchen[] = [
   { 
     id: '1', 
+    slug: 'thaat-baat',
     name: "Thaat Baat", 
     rating: 4.6, 
     deliveryTime: "25-30 min",
@@ -53,6 +64,7 @@ const KITCHENS: Kitchen[] = [
   },
   { 
     id: '2', 
+    slug: 'arab-kitchen',
     name: "Arab Kitchen", 
     rating: 4.3, 
     deliveryTime: "35-40 min",
@@ -61,6 +73,7 @@ const KITCHENS: Kitchen[] = [
   },
   { 
     id: '3', 
+    slug: 'guri-kripas',
     name: "Guri Kripas", 
     rating: 4.5, 
     deliveryTime: "20-25 min",
@@ -70,30 +83,27 @@ const KITCHENS: Kitchen[] = [
 ];
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('home');
-  const [selectedKitchen, setSelectedKitchen] = useState<Kitchen | null>(null);
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
+  );
+}
+
+function AppContent() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCheckout, setShowCheckout] = useState(false);
   const [orderSummary, setOrderSummary] = useState<CartItem[]>([]);
   const [isReturningUser, setIsReturningUser] = useState(false);
 
-  // Navigation helpers
-  const goToMenu = (kitchen: Kitchen) => {
-    setSelectedKitchen(kitchen);
-    setScreen('menu');
-  };
-
-  const goHome = () => {
-    setScreen('home');
-    setSelectedKitchen(null);
-  };
-
   const placeOrder = () => {
     setOrderSummary([...cart]);
     setCart([]);
     setShowCheckout(false);
-    setIsReturningUser(true); // Simulate becoming a returning user after first order
-    setScreen('success');
+    setIsReturningUser(true);
+    navigate('/success');
   };
 
   const addToCart = (item: CartItem) => {
@@ -119,7 +129,6 @@ export default function App() {
   };
 
   const cartTotal = useMemo(() => cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0), [cart]);
-  const cartCount = useMemo(() => cart.reduce((acc, curr) => acc + curr.quantity, 0), [cart]);
 
   return (
     <div className="min-h-screen sm:bg-gray-200 flex justify-center items-center">
@@ -127,25 +136,29 @@ export default function App() {
       <div className="w-full h-screen bg-white relative overflow-hidden flex flex-col sm:w-[375px] sm:rounded-[40px] sm:border-[8px] sm:border-ink sm:shadow-2xl sm:my-0">
         
         <AnimatePresence mode="wait">
-          {screen === 'home' && (
-            <HomeScreen key="home" onSelectKitchen={goToMenu} />
-          )}
-
-          {screen === 'menu' && selectedKitchen && (
-            <MenuScreen 
-              key="menu" 
-              kitchen={selectedKitchen} 
-              onBack={goHome} 
-              onAddToCart={addToCart}
-              cart={cart}
-              updateQuantity={updateQuantity}
-              onCheckout={() => setShowCheckout(true)}
-            />
-          )}
-
-          {screen === 'success' && (
-            <SuccessScreen key="success" summary={orderSummary} onHome={goHome} />
-          )}
+          <motion.div 
+            key={location.pathname}
+            className="flex-1 flex flex-col overflow-hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <Routes location={location}>
+              <Route path="/" element={<HomeScreen />} />
+              <Route 
+                path="/kitchen/:slug" 
+                element={
+                  <MenuScreen 
+                    onAddToCart={addToCart}
+                    cart={cart}
+                    updateQuantity={updateQuantity}
+                    onCheckout={() => setShowCheckout(true)}
+                  />
+                } 
+              />
+              <Route path="/success" element={<SuccessScreen summary={orderSummary} />} />
+            </Routes>
+          </motion.div>
         </AnimatePresence>
 
         {/* Checkout Bottom Sheet */}
@@ -205,11 +218,7 @@ export default function App() {
 
                 <div className="p-4 bg-primary/5 rounded-2xl border border-primary/10 mb-8">
                   <div className="flex justify-between items-center mb-1">
-                    <span className="text-sm font-semibold text-primary">Ordering from</span>
-                    <span className="text-sm font-bold">{selectedKitchen?.name}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-semibold text-slate-600">Total Price</span>
+                    <span className="text-sm font-semibold text-primary">Order Total</span>
                     <span className="text-lg font-bold text-slate-900">₹{cartTotal}</span>
                   </div>
                 </div>
@@ -230,49 +239,179 @@ export default function App() {
   );
 }
 
+// --- Mini Search Bar ---
+function SearchBar() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const query = searchParams.get('q') || '';
+
+  const handleSearch = (e: ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (val) {
+      searchParams.set('q', val);
+    } else {
+      searchParams.delete('q');
+    }
+    setSearchParams(searchParams);
+  };
+
+  return (
+    <div className="px-6 mb-6">
+      <div className="relative group">
+        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+          <Search className="w-5 h-5 text-secondary/30 group-focus-within:text-primary transition-colors" />
+        </div>
+        <input 
+          type="text" 
+          value={query}
+          onChange={handleSearch}
+          placeholder="What do you want eat?" 
+          className="w-full bg-slate-100/50 border-2 border-transparent focus:border-primary/20 focus:bg-white rounded-[20px] py-4 pl-12 pr-4 text-sm font-medium transition-all outline-none text-ink placeholder:text-slate-400"
+        />
+      </div>
+    </div>
+  );
+}
+
+// --- Category Bar ---
+function CategoryBar() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeCategory = searchParams.get('category') || 'All';
+
+  const categories = [
+    { name: 'All', emoji: '🍽️' },
+    { name: 'Soups', emoji: '🥣' },
+    { name: 'Salads', emoji: '🥗' },
+    { name: 'Noodles', emoji: '🍜' },
+    { name: 'Rice', emoji: '🍚' },
+    { name: 'Pastry', emoji: '🍰' },
+  ];
+
+  return (
+    <div className="flex gap-4 overflow-x-auto no-scrollbar px-6 mb-8 mt-2">
+      {categories.map(cat => (
+        <button 
+          key={cat.name} 
+          onClick={() => {
+            if (cat.name === 'All') {
+              searchParams.delete('category');
+            } else {
+              searchParams.set('category', cat.name);
+            }
+            setSearchParams(searchParams);
+          }}
+          className="flex flex-col items-center gap-2 flex-shrink-0 outline-none"
+        >
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl transition-all shadow-sm ${activeCategory === cat.name ? 'bg-amber-400 rotate-6 scale-110' : 'bg-white border border-slate-50'}`}>
+            {cat.emoji}
+          </div>
+          <span className={`text-[11px] font-bold uppercase tracking-wider ${activeCategory === cat.name ? 'text-primary' : 'text-slate-400'}`}>
+            {cat.name}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // --- Home Screen ---
-function HomeScreen({ onSelectKitchen }: { onSelectKitchen: (k: Kitchen) => void, key?: Key }) {
+function HomeScreen() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const category = searchParams.get('category');
+  const query = searchParams.get('q')?.toLowerCase() || '';
+
+  const filteredKitchens = KITCHENS.filter(k => {
+    const matchesCategory = !category || k.description.toLowerCase().includes(category.toLowerCase()) || category === 'All';
+    const matchesQuery = !query || k.name.toLowerCase().includes(query) || k.description.toLowerCase().includes(query);
+    return matchesCategory && matchesQuery;
+  });
+
   return (
     <motion.div 
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      className="flex-1 overflow-y-auto no-scrollbar space-y-4 pb-20 bg-color-bg-app"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="flex-1 overflow-y-auto no-scrollbar bg-bg-app"
     >
-      <header className="px-5 py-6 bg-white border-b border-[#f0f0f0]">
-        <h1 className="st-title">STUVA</h1>
-        <p className="st-subtitle">Home kitchens near you</p>
+      <header className="px-6 pt-8 pb-4 flex justify-between items-start">
+        <div>
+          <h1 className="text-primary font-display text-4xl leading-none">Hi, Zesan</h1>
+          <div className="flex items-center gap-1.5 mt-1 opacity-80">
+            <MapPin className="w-4 h-4 text-primary" />
+            <span className="text-[12px] font-bold text-secondary uppercase tracking-tight">Riggs Road Northeast, 220</span>
+          </div>
+        </div>
+        <div className="w-12 h-12 rounded-2xl bg-white border-2 border-primary/20 p-1">
+          <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" className="w-full h-full rounded-xl" alt="profile" />
+        </div>
       </header>
 
-      <div className="px-4 space-y-4">
-        {KITCHENS.map((kitchen) => (
-          <motion.div 
-            key={kitchen.id}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => onSelectKitchen(kitchen)}
-            className="bg-white rounded-card overflow-hidden shadow-[0_4px_12px_rgba(0,0,0,0.05)] cursor-pointer"
-          >
-            <div className="h-[140px] w-full relative">
-              <img 
-                src={kitchen.image} 
-                alt={kitchen.name} 
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            </div>
-            <div className="p-4">
-              <div className="flex justify-between items-center">
-                <span className="font-[700] text-[16px] text-ink">{kitchen.name}</span>
-                <div className="rating-badge">
-                  ⭐ <span className="mt-[1px]">{kitchen.rating}</span>
-                </div>
-              </div>
-              <p className="text-[12px] text-[#777] mt-1 font-medium italic">
-                {kitchen.description}
-              </p>
-            </div>
-          </motion.div>
-        ))}
+      <SearchBar />
+      <CategoryBar />
+
+      <main className="px-6 space-y-8 pb-12">
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-2xl text-secondary">
+              {category ? `${category}` : 'Recommended'}
+            </h2>
+            <button 
+              onClick={() => navigate('/')} 
+              className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline"
+            >
+              Reset
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            {filteredKitchens.length > 0 ? (
+              filteredKitchens.map(kitchen => (
+                <KitchenCard key={kitchen.id} kitchen={kitchen} onClick={() => navigate(`/kitchen/${kitchen.slug}`)} />
+              ))
+            ) : (
+              <div className="col-span-2 py-10 text-center opacity-50 font-bold">No kitchens found...</div>
+            )}
+          </div>
+        </section>
+      </main>
+    </motion.div>
+  );
+}
+
+// --- Kitchen Card ---
+function KitchenCard({ kitchen, onClick }: { kitchen: Kitchen, onClick: () => void, key?: any }) {
+  return (
+    <motion.div 
+      whileTap={{ scale: 0.96 }}
+      onClick={onClick}
+      className="funky-card overflow-hidden flex flex-col group cursor-pointer"
+    >
+      <div className="relative h-40 overflow-hidden">
+        <img 
+          src={kitchen.image} 
+          alt={kitchen.name} 
+          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+          referrerPolicy="no-referrer"
+        />
+        <div className="absolute top-2 left-2 bg-primary text-white font-display text-[11px] px-2 py-1 rounded-lg shadow-sm">
+          25$
+        </div>
+        <button className="absolute top-2 right-2 w-7 h-7 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white">
+          <Heart className="w-4 h-4" />
+        </button>
+      </div>
+      
+      <div className="flex-1 flex flex-col">
+        <div className="p-3 flex-1">
+          <h3 className="font-display text-[15px] text-primary group-hover:text-ink transition-colors leading-tight">{kitchen.name}</h3>
+          <p className="text-[10px] text-slate-400 font-medium mt-1 line-clamp-1">{kitchen.description}</p>
+        </div>
+        <div className="bg-secondary flex items-center justify-between px-3 py-2">
+           <span className="text-white/60 font-bold text-[10px] uppercase">Details</span>
+           <button className="w-6 h-6 bg-primary text-white rounded-lg flex items-center justify-center active:scale-90 transition-transform">
+             <Plus className="w-4 h-4" strokeWidth={3} />
+           </button>
+        </div>
       </div>
     </motion.div>
   );
@@ -280,26 +419,24 @@ function HomeScreen({ onSelectKitchen }: { onSelectKitchen: (k: Kitchen) => void
 
 // --- Menu Screen ---
 function MenuScreen({ 
-  kitchen, 
-  onBack, 
   onAddToCart, 
   cart, 
   updateQuantity,
   onCheckout 
 }: { 
-  kitchen: Kitchen; 
-  onBack: () => void;
   onAddToCart: (item: CartItem) => void;
   cart: CartItem[];
   updateQuantity: (id: string, delta: number) => void;
   onCheckout: () => void;
-  key?: Key;
 }) {
+  const { slug } = useParams();
+  const navigate = useNavigate();
+  const kitchen = useMemo(() => KITCHENS.find(k => k.slug === slug), [slug]);
   const [isSticky, setIsSticky] = useState(false);
 
   useEffect(() => {
     const handleScroll = (e: any) => {
-      setIsSticky(e.target.scrollTop > 100);
+      setIsSticky(e.target.scrollTop > 200);
     };
     const div = document.getElementById('menu-scroll-container');
     div?.addEventListener('scroll', handleScroll);
@@ -309,137 +446,137 @@ function MenuScreen({
   const cartTotal = useMemo(() => cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0), [cart]);
   const cartCount = useMemo(() => cart.reduce((acc, curr) => acc + curr.quantity, 0), [cart]);
 
+  if (!kitchen) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-bg-app">
+        <h2 className="font-display text-2xl text-secondary">Kitchen not found</h2>
+        <button onClick={() => navigate('/')} className="mt-4 text-primary font-bold">Back to Home</button>
+      </div>
+    );
+  }
+
   return (
     <motion.div 
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 20 }}
+      initial={{ opacity: 0, y: 40 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
       id="menu-scroll-container"
-      className="flex-1 overflow-y-auto no-scrollbar relative flex flex-col"
+      className="flex-1 overflow-y-auto no-scrollbar relative flex flex-col bg-bg-app"
     >
-      <header className={`sticky top-0 z-10 transition-all duration-300 px-6 py-4 flex items-center justify-between ${isSticky ? 'bg-white/90 backdrop-blur-xl shadow-sm' : 'bg-transparent'}`}>
-        <button onClick={onBack} className="p-2.5 bg-white shadow-md rounded-2xl text-slate-900 active:scale-95 transition-transform">
+      {/* Dynamic Header */}
+      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 px-6 py-4 flex items-center justify-between ${isSticky ? 'bg-white shadow-md' : 'bg-transparent'}`}>
+        <button onClick={() => navigate('/')} className="p-2 bg-white shadow-xl rounded-full text-secondary active:scale-90 transition-transform border border-slate-100">
           <ChevronLeft className="w-6 h-6" />
         </button>
         {isSticky && (
           <motion.h2 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-lg font-bold"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="font-display text-primary uppercase text-lg"
           >
             {kitchen.name}
           </motion.h2>
         )}
-        <div className="w-10" /> {/* Spacer */}
+        <button className="p-2 bg-white shadow-xl rounded-full text-secondary active:scale-90 transition-transform border border-slate-100">
+          <Heart className="w-5 h-5" />
+        </button>
       </header>
 
-      <div className="px-6 py-4 space-y-1 mb-6">
-        <h1 className="text-4xl font-extrabold tracking-tight">{kitchen.name}</h1>
-        <div className="flex items-center gap-2 text-slate-500 font-medium text-sm">
-          <MapPin className="w-3.5 h-3.5 text-primary" />
-          <span>Home Kitchen • 3.2 km away</span>
-        </div>
+      {/* Hero Section */}
+      <div className="relative h-[45vh] flex-shrink-0">
+        <img 
+          src={kitchen.image} 
+          alt={kitchen.name} 
+          className="w-full h-full object-cover"
+          referrerPolicy="no-referrer"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-bg-app via-transparent to-black/10" />
       </div>
 
-      <div className="px-6 space-y-8 pb-32">
-        {/* Section: Today's Menu */}
+      <div className="px-6 -mt-16 relative z-10 space-y-8 pb-32">
+        <div className="bg-white p-6 rounded-[32px] shadow-xl shadow-ink/5 space-y-4 border-b-4 border-slate-100">
+          <div className="flex justify-between items-start">
+            <h1 className="st-title text-3xl">{kitchen.name}</h1>
+            <div className="bg-primary text-white font-display px-3 py-1 rounded-xl text-lg">25$</div>
+          </div>
+          <p className="st-subtitle font-bold text-sm">650g</p>
+          <p className="text-[13px] text-slate-500 font-medium leading-relaxed">
+            Grapes, figs, cheese, eggs, olives, black olives, grapefruit, ham, almonds
+          </p>
+          
+          <div className="pt-4 space-y-4">
+            <h3 className="font-display text-lg text-secondary">Nutritional value per 100 g</h3>
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { label: 'Proteins', val: '9 g' },
+                { label: 'Carbs', val: '14 g' },
+                { label: 'Energy', val: '146 kcal' },
+                { label: 'Fats', val: '6 g' },
+              ].map(stat => (
+                <div key={stat.label}>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter line-clamp-1">{stat.label}</p>
+                  <p className="text-[12px] font-black text-secondary">{stat.val}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Action Bar */}
+        <div className="flex items-center gap-4">
+           <div className="flex-1 bg-white rounded-2xl p-2 flex items-center justify-between border border-slate-100 shadow-sm">
+             <button className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold active:bg-slate-200">-</button>
+             <span className="font-display text-xl text-primary">2</span>
+             <button className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-900 font-bold active:bg-slate-200">+</button>
+           </div>
+           <button 
+             onClick={() => onAddToCart({ id: 'sample', name: kitchen.name, price: 25, quantity: 1 })}
+             className="flex-[2] funky-btn-primary h-14 flex items-center justify-center"
+           >
+             Add to cart
+           </button>
+        </div>
+
+        {/* Section: Simple Thali configuration (Adapted to funky theme) */}
         <div className="space-y-6">
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            Today's Menu
-            <div className="h-1 flex-1 bg-primary/10 rounded-full" />
-          </h2>
+          <div className="space-y-1">
+            <p className="text-[10px] font-black text-primary uppercase tracking-widest px-1">Customize</p>
+            <h2 className="font-display text-2xl text-secondary">Build your thali</h2>
+          </div>
           
           <ThaliCard 
-            title="Normal Thali" 
-            price={80} 
-            onAdd={(options) => onAddToCart({ id: 'thali-normal', name: 'Normal Thali', price: 80, quantity: 1, options })}
-          />
-
-          <ThaliCard 
-            title="Special Thali" 
+            badge="FUNKY"
+            title="House Special" 
             price={120} 
-            isSpecial
-            onAdd={(options) => onAddToCart({ id: 'thali-special', name: 'Special Thali', price: 120, quantity: 1, options })}
+            description="The most energetic combo in the menu."
+            image="https://images.unsplash.com/photo-1626777552726-4a6b52c67ad5?auto=format&fit=crop&q=80&w=400"
+            onAdd={(options) => onAddToCart({ id: 'thali-p', name: 'House Special', price: 120, quantity: 1, options })}
           />
-        </div>
-
-        {/* Section: Parathas */}
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            Parathas
-            <div className="h-1 flex-1 bg-primary/10 rounded-full" />
-          </h2>
-          
-          <div className="space-y-4">
-            <SimpleItem 
-              id="p1" 
-              name="Aloo Paratha" 
-              price={40} 
-              onUpdate={(id, d) => updateQuantity(id, d)}
-              cartItem={cart.find(i => i.id === 'p1')}
-              onAdd={() => onAddToCart({ id: 'p1', name: 'Aloo Paratha', price: 40, quantity: 1 })}
-            />
-            <SimpleItem 
-              id="p2" 
-              name="Onion Paratha" 
-              price={45} 
-              onUpdate={(id, d) => updateQuantity(id, d)}
-              cartItem={cart.find(i => i.id === 'p2')}
-              onAdd={() => onAddToCart({ id: 'p2', name: 'Onion Paratha', price: 45, quantity: 1 })}
-            />
-          </div>
-        </div>
-
-        {/* Section: Add-ons */}
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            Add-ons
-            <div className="h-1 flex-1 bg-primary/10 rounded-full" />
-          </h2>
-          
-          <div className="space-y-4">
-            <SimpleItem 
-              id="add1" 
-              name="Extra Roti" 
-              price={7} 
-              onUpdate={(id, d) => updateQuantity(id, d)}
-              cartItem={cart.find(i => i.id === 'add1')}
-              onAdd={() => onAddToCart({ id: 'add1', name: 'Extra Roti', price: 7, quantity: 1 })}
-            />
-            <SimpleItem 
-              id="add2" 
-              name="Fresh Curd" 
-              price={15} 
-              onUpdate={(id, d) => updateQuantity(id, d)}
-              cartItem={cart.find(i => i.id === 'add2')}
-              onAdd={() => onAddToCart({ id: 'add2', name: 'Fresh Curd', price: 15, quantity: 1 })}
-            />
-          </div>
         </div>
       </div>
 
-      {/* Sticky Cart Bar */}
+      {/* Cart Bar */}
       <AnimatePresence>
         {cartCount > 0 && (
           <motion.div 
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 100, opacity: 0 }}
-            className="absolute bottom-5 left-4 right-4 z-30"
+            initial={{ y: 100, scale: 0.9, opacity: 0 }}
+            animate={{ y: 0, scale: 1, opacity: 1 }}
+            exit={{ y: 100, scale: 0.9, opacity: 0 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[340px] z-[100]"
           >
             <button 
               onClick={onCheckout}
-              className="w-full cart-bar-style group active:scale-95 transition-transform"
+              className="w-full cart-bar-style group active:scale-95 transition-all active:rotate-1"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-6 bg-white/20 border border-white/10 rounded-[6px] flex items-center justify-center font-bold text-[12px]">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-white/20 border border-white/20 rounded-xl flex items-center justify-center font-display text-lg text-white">
                   {cartCount}
                 </div>
-                <div className="text-sm font-semibold">₹{cartTotal}</div>
+                <div className="font-display text-lg tracking-wider">₹{cartTotal}</div>
               </div>
-              <div className="flex items-center gap-1 font-bold text-sm uppercase tracking-wider">
-                Place Order
-                <span className="text-lg leading-none mb-0.5">›</span>
+              <div className="flex items-center gap-1 font-display text-md uppercase tracking-widest text-primary">
+                GO!
+                <span className="text-2xl leading-none">›</span>
               </div>
             </button>
           </motion.div>
@@ -449,95 +586,80 @@ function MenuScreen({
   );
 }
 
-// --- Thali Card Component ---
+// --- Funky Thali Card ---
 function ThaliCard({ 
+  badge,
   title, 
   price, 
-  isSpecial, 
+  description,
+  image,
   onAdd 
 }: { 
+  badge: string;
   title: string; 
   price: number; 
-  isSpecial?: boolean; 
+  description: string;
+  image: string;
   onAdd: (opt: any) => void 
 }) {
-  const [riceOn, setRiceOn] = useState(false);
+  const [withRice, setWithRice] = useState(true);
   const [drySabji, setDrySabji] = useState('Aloo Gobi');
-  const [gravySabji, setGravySabji] = useState('Paneer');
 
   return (
-    <div className={`p-6 bg-white rounded-card transition-all relative overflow-hidden shadow-sm`}>
-      <div className="flex justify-between items-start mb-8">
-        <div>
-          <h3 className="text-lg font-bold text-ink">{title}</h3>
-          <p className="text-[#666] font-semibold text-sm">₹{price}</p>
+    <div className="funky-card p-6 space-y-6 relative border-b-8 border-primary/5">
+      <div className="flex items-center gap-4">
+        <div className="w-20 h-20 rounded-[28px] overflow-hidden flex-shrink-0 relative border-4 border-bg-app">
+          <img src={image} className="w-full h-full object-cover" alt={title} />
+          <div className="absolute -top-1 -left-1 bg-amber-400 text-[8px] font-black px-2 py-1 rounded-br-2xl text-ink uppercase rotate-[-5deg]">
+            {badge}
+          </div>
         </div>
-        <div className="stepper-bg">
-          <button className="stepper-btn-style active:scale-90 transition-transform">
-            <Minus className="w-4 h-4" />
-          </button>
-          <span className="text-sm font-semibold">1</span>
-          <button className="stepper-btn-style active:scale-90 transition-transform">
-            <Plus className="w-4 h-4" />
-          </button>
+        <div className="flex-1">
+          <h3 className="font-display text-xl text-secondary">{title}</h3>
+          <p className="text-[11px] text-slate-400 font-bold uppercase tracking-tight">{description}</p>
+          <p className="font-display text-primary text-lg mt-1">₹{price}</p>
         </div>
       </div>
 
       <div className="space-y-6">
-        {/* Toggle Option */}
-        <div className="flex items-center justify-between">
-          <span className="text-[13px] font-semibold text-[#444]">Rice</span>
-          <button 
-            onClick={() => setRiceOn(!riceOn)}
-            className={`w-[40px] h-[22px] rounded-full relative transition-colors p-[2px] ${riceOn ? 'bg-primary' : 'bg-[#E5E5E5]'}`}
-          >
-            <motion.div 
-              animate={{ x: riceOn ? 18 : 0 }}
-              className="w-[18px] h-[18px] bg-white rounded-full shadow-sm"
-            />
-          </button>
-        </div>
-        
-        <p className="text-[12px] font-semibold text-primary m-0">👉 {riceOn ? "3 Roti + Rice" : "5 Roti instead of 3"}</p>
-
-        {/* Chips UI for Sabjis */}
-        <div className="space-y-3">
-          <label className="text-[11px] font-bold uppercase tracking-[0.5px] text-[#999]">Select Dry Sabji</label>
-          <div className="flex flex-wrap gap-2">
-            {['Aloo Gobi', 'Bhindi', 'Mix Veg'].map(s => (
-              <Chip key={s} selected={drySabji === s} onClick={() => setDrySabji(s)} label={s} />
-            ))}
-          </div>
+        <div className="segmented-control">
+           <button 
+             onClick={() => setWithRice(true)} 
+             className={`segmented-item ${withRice ? 'segmented-item-active' : 'segmented-item-inactive'}`}
+           >
+             WITH RICE
+           </button>
+           <button 
+             onClick={() => setWithRice(false)} 
+             className={`segmented-item ${!withRice ? 'segmented-item-active' : 'segmented-item-inactive'}`}
+           >
+             NO RICE
+           </button>
         </div>
 
         <div className="space-y-3">
-          <label className="text-[11px] font-bold uppercase tracking-[0.5px] text-[#999]">Select Gravy Sabji</label>
-          <div className="flex flex-wrap gap-2">
-            {['Paneer', 'Dal Fry', 'Chole'].map(s => (
-              <Chip key={s} selected={gravySabji === s} onClick={() => setGravySabji(s)} label={s} />
-            ))}
-          </div>
+           <span className="text-[10px] font-black text-secondary tracking-widest uppercase opacity-40 px-1">Curry of the day</span>
+           <div className="flex flex-wrap gap-2">
+             {['Aloo Gobi', 'Bhindi', 'Special Veg'].map(s => (
+               <button 
+                 key={s} 
+                 onClick={() => setDrySabji(s)}
+                 className={`px-5 py-2 rounded-2xl text-[12px] font-bold transition-all ${drySabji === s ? 'bg-primary text-white shadow-lg' : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+               >
+                 {s}
+               </button>
+             ))}
+           </div>
         </div>
 
         <button 
-          onClick={() => onAdd({ riceOn, drySabji, gravySabji })}
-          className="w-full py-4 mt-4 bg-primary text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 active:scale-95 transition-transform"
+          onClick={() => onAdd({ withRice, drySabji })}
+          className="w-full funky-btn-secondary py-4"
         >
-          Add to Cart
+          Add to bag
         </button>
       </div>
     </div>
-  );
-}
-
-function Chip({ selected, onClick, label }: { selected: boolean; onClick: () => void; label: string, key?: Key }) {
-  return (
-    <button 
-      onClick={onClick}
-      className={`pill-style ${selected ? 'pill-style-active shadow-sm' : ''}`}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -546,6 +668,8 @@ function SimpleItem({
   id, 
   name, 
   price, 
+  description,
+  image,
   onAdd, 
   onUpdate, 
   cartItem 
@@ -553,33 +677,39 @@ function SimpleItem({
   id: string; 
   name: string; 
   price: number; 
+  description: string;
+  image: string;
   onAdd: () => void;
   onUpdate: (id: string, d: number) => void;
   cartItem?: CartItem;
 }) {
   return (
-    <div className="bg-white p-5 rounded-card flex items-center justify-between border border-white transition-all hover:border-[#f0f0f0]">
-      <div>
-        <h4 className="font-bold text-sm text-ink">{name}</h4>
-        <p className="text-primary font-bold text-xs">₹{price}</p>
+    <div className="flex items-center gap-4 py-2">
+      <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-slate-50 border border-slate-100 transition-transform active:scale-95">
+        <img src={image} className="w-full h-full object-cover" alt={name} />
+      </div>
+      <div className="flex-1">
+        <h4 className="font-bold text-[14px] text-slate-800">{name}</h4>
+        <p className="text-[11px] text-slate-400 font-medium mb-1">{description}</p>
+        <p className="text-[13px] font-bold text-slate-900">₹{price}</p>
       </div>
       
       {cartItem ? (
-        <div className="stepper-bg">
-          <button onClick={() => onUpdate(id, -1)} className="stepper-btn-style active:scale-90 transition-transform">
+        <div className="flex items-center gap-3 bg-primary/10 px-2 py-1.5 rounded-xl">
+          <button onClick={() => onUpdate(id, -1)} className="p-1 bg-white rounded-lg shadow-sm active:scale-90 transition-transform">
             <Minus className="w-3.5 h-3.5" />
           </button>
-          <span className="font-bold text-xs w-4 text-center">{cartItem.quantity}</span>
-          <button onClick={() => onUpdate(id, 1)} className="stepper-btn-style active:scale-90 transition-transform">
-            <Plus className="w-3.5 h-3.5" />
+          <span className="font-black text-[12px] w-4 text-center text-primary">{cartItem.quantity}</span>
+          <button onClick={() => onUpdate(id, 1)} className="p-1 bg-white rounded-lg shadow-sm active:scale-90 transition-transform">
+            <Plus className="w-3.5 h-3.5 text-primary" />
           </button>
         </div>
       ) : (
         <button 
           onClick={onAdd}
-          className="w-[28px] h-[28px] bg-primary/10 text-primary rounded-[8px] flex items-center justify-center active:scale-90 transition-transform font-bold"
+          className="px-5 py-2 border border-primary text-primary rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-transform"
         >
-          +
+          Add
         </button>
       )}
     </div>
@@ -587,70 +717,68 @@ function SimpleItem({
 }
 
 // --- Success Screen ---
-function SuccessScreen({ summary, onHome }: { summary: CartItem[]; onHome: () => void, key?: Key }) {
+function SuccessScreen({ summary }: { summary: CartItem[] }) {
+  const navigate = useNavigate();
+  const total = useMemo(() => summary.reduce((a, c) => a + (c.price * c.quantity), 0), [summary]);
+
   return (
     <motion.div 
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="flex-1 p-8 flex flex-col items-center justify-center text-center space-y-8"
+      className="flex-1 p-8 flex flex-col items-center justify-center text-center space-y-8 bg-bg-app"
     >
       <div className="relative">
         <motion.div 
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
+          initial={{ scale: 0, rotate: -20 }}
+          animate={{ scale: 1, rotate: 0 }}
           transition={{ type: "spring", damping: 12, stiffness: 200, delay: 0.2 }}
-          className="w-28 h-28 bg-primary rounded-full flex items-center justify-center shadow-xl shadow-primary/30"
+          className="w-32 h-32 bg-primary rounded-[40px] flex items-center justify-center shadow-2xl shadow-primary/40 rotate-3 border-4 border-white"
         >
-          <CheckCircle2 className="w-16 h-16 text-white" />
+          <CheckCircle2 className="w-16 h-16 text-white" strokeWidth={3} />
         </motion.div>
         <motion.div 
-          animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.1, 0.3] }}
-          transition={{ duration: 2, repeat: Infinity }}
-          className="absolute inset-0 bg-primary rounded-full -z-10"
+          animate={{ rotate: 360 }}
+          transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+          className="absolute -inset-4 border-4 border-dashed border-primary/20 rounded-full -z-10"
         />
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-3xl font-black tracking-tight text-ink">Order Placed!</h1>
-        <p className="st-subtitle text-lg">Your kitchen is already<br/>on the clock.</p>
+        <h1 className="text-4xl font-display tracking-tight text-secondary">Aww Yeah!</h1>
+        <p className="font-bold text-slate-500 bg-white/50 px-4 py-1 rounded-full inline-block">Order #STV-{Math.floor(Math.random() * 10000)}</p>
       </div>
 
-      <div className="w-full bg-white p-6 rounded-card shadow-sm space-y-4">
-        <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-[#999]">
-          <span>Order Summary</span>
-          <span>#STV-{Math.floor(Math.random() * 10000)}</span>
+      <div className="w-full funky-card p-6 space-y-4">
+        <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-primary opacity-50">
+          <span>Your goodies</span>
+          <span>Delivering now</span>
         </div>
         <div className="space-y-3">
           {summary.map(item => (
-            <div key={item.id} className="flex justify-between items-center text-sm font-medium">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-primary">{item.quantity}x</span>
-                <span className="text-ink">{item.name}</span>
+            <div key={item.id} className="flex justify-between items-center text-sm">
+              <div className="flex items-center gap-3">
+                <span className="font-display text-primary text-lg">{item.quantity}×</span>
+                <span className="font-bold text-secondary">{item.name}</span>
               </div>
-              <span className="font-bold">₹{item.price * item.quantity}</span>
+              <span className="font-display text-secondary">₹{item.price * item.quantity}</span>
             </div>
           ))}
         </div>
-        <div className="pt-4 border-t border-dashed border-[#E5E5E5] flex justify-between items-center">
-          <span className="font-bold text-ink">Total Paid</span>
-          <span className="text-xl font-black text-primary">₹{summary.reduce((a, c) => a + (c.price * c.quantity), 0)}</span>
+        <div className="pt-4 border-t-2 border-dashed border-bg-app flex justify-between items-center">
+          <span className="font-black text-slate-400 uppercase text-[10px] tracking-widest">Total Energy</span>
+          <span className="text-2xl font-display text-primary">₹{total}</span>
         </div>
       </div>
 
-      <div className="flex items-center gap-3 p-4 bg-[#FFF9E6] rounded-2xl w-full">
-        <Clock className="w-5 h-5 text-primary" />
-        <div className="text-left">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-primary">Status</p>
-          <p className="text-sm font-bold text-slate-700">Preparing and packing...</p>
-        </div>
+      <div className="w-full space-y-4">
+        <button 
+          onClick={() => navigate('/')}
+          className="w-full funky-btn-secondary h-16 text-xl"
+        >
+          TAKE ME HOME
+        </button>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Thank you for choosing STUVA</p>
       </div>
-
-      <button 
-        onClick={onHome}
-        className="w-full py-5 bg-ink text-white rounded-2xl font-bold text-lg shadow-xl active:scale-95 transition-transform"
-      >
-        Take Me Home
-      </button>
     </motion.div>
   );
 }

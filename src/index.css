@@ -1,64 +1,70 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lilita+One&family=Fredoka:wght@300..700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Inter", sans-serif;
+  --font-sans: "Fredoka", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Lilita One", serif;
   
-  --color-primary: #F27D26; /* st-orange */
-  --color-primary-dark: #D97706;
-  --color-bg-app: #F8F8F8; /* st-bg */
-  --color-ink: #141414; /* st-ink */
+  --color-primary: #3D7B6C; /* Forest Green */
+  --color-secondary: #48344D; /* Dark Plum */
+  --color-bg-app: #FBF5F7; /* Pastelly Off-white */
+  --color-ink: #2D1F2D; /* Deepest Purple */
+  --color-accent: #E8A8B3; /* Soft Pink / Muted accent */
   
-  --radius-card: 20px;
-  --radius-sheet: 28px;
-  --radius-pill: 20px;
+  --radius-card: 24px;
+  --radius-pill: 32px;
 }
 
 @layer base {
   body {
-    @apply bg-white sm:bg-gray-200 text-ink antialiased font-sans;
+    @apply bg-white sm:bg-[#1A1A1A] text-ink antialiased font-sans;
   }
 }
 
-/* Theme specific utilities */
-
+/* Funky Theme Utilities */
 .st-title {
-  @apply text-[24px] font-[800] text-primary tracking-[-0.5px];
+  @apply font-display text-[28px] text-primary tracking-wide leading-tight uppercase;
 }
 
 .st-subtitle {
-  @apply text-[13px] text-[#666] mt-[2px];
+  @apply text-[14px] font-medium text-secondary opacity-70;
 }
 
-.rating-badge {
-  @apply bg-[#FFF9E6] text-[#D97706] text-[11px] font-[700] px-[8px] py-[2px] rounded-[6px] flex items-center gap-[2px];
+.funky-card {
+  @apply bg-white rounded-card shadow-[0_4px_12px_rgba(45,31,45,0.05)] border-2 border-transparent hover:border-primary/10 transition-all;
 }
 
-.pill-style {
-  @apply px-[14px] py-[6px] rounded-pill text-[12px] font-[500] border-[1.5px] border-[#E5E5E5] text-[#666] transition-all;
+.funky-btn-primary {
+  @apply bg-primary text-white font-display uppercase tracking-widest px-6 py-3 rounded-2xl shadow-lg active:scale-95 transition-all;
 }
 
-.pill-style-active {
-  @apply bg-[#FFF7ED] border-primary text-primary;
+.funky-btn-secondary {
+  @apply bg-secondary text-white font-display uppercase tracking-widest px-6 py-3 rounded-2xl shadow-lg active:scale-95 transition-all;
 }
 
-.stepper-bg {
-  @apply bg-[#F3F4F6] p-[4px_8px] rounded-[12px] flex items-center gap-[12px];
+.segmented-control {
+  @apply flex bg-slate-100/50 p-1 rounded-2xl border border-slate-100;
 }
 
-.stepper-btn-style {
-  @apply w-[24px] h-[24px] rounded-[6px] bg-white flex items-center justify-center font-bold text-primary shadow-[0_2px_4px_rgba(0,0,0,0.05)];
+.segmented-item {
+  @apply flex-1 text-center py-2 text-[13px] font-bold rounded-xl transition-all font-sans;
+}
+
+.segmented-item-active {
+  @apply bg-primary text-white shadow-md;
+}
+
+.segmented-item-inactive {
+  @apply text-slate-400;
+}
+
+.badge-item {
+  @apply flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-[10px] font-bold text-slate-500 uppercase;
 }
 
 .cart-bar-style {
-  @apply bg-ink rounded-[16px] h-[56px] flex items-center justify-between px-[20px] text-white shadow-[0_10px_20px_rgba(0,0,0,0.2)];
+  @apply bg-secondary text-white rounded-3xl h-[64px] flex items-center justify-between px-6 shadow-2xl;
 }
 
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
