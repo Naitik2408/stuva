@@ -272,58 +272,15 @@ function SearchBar() {
   );
 }
 
-// --- Category Bar ---
-function CategoryBar() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const activeCategory = searchParams.get('category') || 'All';
-
-  const categories = [
-    { name: 'All', emoji: '🍽️' },
-    { name: 'Soups', emoji: '🥣' },
-    { name: 'Salads', emoji: '🥗' },
-    { name: 'Noodles', emoji: '🍜' },
-    { name: 'Rice', emoji: '🍚' },
-    { name: 'Pastry', emoji: '🍰' },
-  ];
-
-  return (
-    <div className="flex gap-4 overflow-x-auto no-scrollbar px-6 mb-8 mt-2">
-      {categories.map(cat => (
-        <button 
-          key={cat.name} 
-          onClick={() => {
-            if (cat.name === 'All') {
-              searchParams.delete('category');
-            } else {
-              searchParams.set('category', cat.name);
-            }
-            setSearchParams(searchParams);
-          }}
-          className="flex flex-col items-center gap-2 flex-shrink-0 outline-none"
-        >
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl transition-all shadow-sm ${activeCategory === cat.name ? 'bg-amber-400 rotate-6 scale-110' : 'bg-white border border-slate-50'}`}>
-            {cat.emoji}
-          </div>
-          <span className={`text-[11px] font-bold uppercase tracking-wider ${activeCategory === cat.name ? 'text-primary' : 'text-slate-400'}`}>
-            {cat.name}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // --- Home Screen ---
 function HomeScreen() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const category = searchParams.get('category');
   const query = searchParams.get('q')?.toLowerCase() || '';
 
   const filteredKitchens = KITCHENS.filter(k => {
-    const matchesCategory = !category || k.description.toLowerCase().includes(category.toLowerCase()) || category === 'All';
     const matchesQuery = !query || k.name.toLowerCase().includes(query) || k.description.toLowerCase().includes(query);
-    return matchesCategory && matchesQuery;
+    return matchesQuery;
   });
 
   return (
@@ -347,20 +304,13 @@ function HomeScreen() {
       </header>
 
       <SearchBar />
-      <CategoryBar />
 
       <main className="px-6 space-y-8 pb-12">
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-display text-2xl text-secondary">
-              {category ? `${category}` : 'Recommended'}
+              Top Kitchens
             </h2>
-            <button 
-              onClick={() => navigate('/')} 
-              className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline"
-            >
-              Reset
-            </button>
           </div>
           
           <div className="grid grid-cols-2 gap-4">
@@ -393,24 +343,12 @@ function KitchenCard({ kitchen, onClick }: { kitchen: Kitchen, onClick: () => vo
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
           referrerPolicy="no-referrer"
         />
-        <div className="absolute top-2 left-2 bg-primary text-white font-display text-[11px] px-2 py-1 rounded-lg shadow-sm">
-          25$
-        </div>
-        <button className="absolute top-2 right-2 w-7 h-7 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white">
-          <Heart className="w-4 h-4" />
-        </button>
       </div>
       
       <div className="flex-1 flex flex-col">
-        <div className="p-3 flex-1">
+        <div className="p-3 flex-1 pb-4">
           <h3 className="font-display text-[15px] text-primary group-hover:text-ink transition-colors leading-tight">{kitchen.name}</h3>
           <p className="text-[10px] text-slate-400 font-medium mt-1 line-clamp-1">{kitchen.description}</p>
-        </div>
-        <div className="bg-secondary flex items-center justify-between px-3 py-2">
-           <span className="text-white/60 font-bold text-[10px] uppercase">Details</span>
-           <button className="w-6 h-6 bg-primary text-white rounded-lg flex items-center justify-center active:scale-90 transition-transform">
-             <Plus className="w-4 h-4" strokeWidth={3} />
-           </button>
         </div>
       </div>
     </motion.div>
@@ -477,9 +415,7 @@ function MenuScreen({
             {kitchen.name}
           </motion.h2>
         )}
-        <button className="p-2 bg-white shadow-xl rounded-full text-secondary active:scale-90 transition-transform border border-slate-100">
-          <Heart className="w-5 h-5" />
-        </button>
+        <div className="w-10" /> {/* Spacer instead of Heart */}
       </header>
 
       {/* Hero Section */}
@@ -494,64 +430,45 @@ function MenuScreen({
       </div>
 
       <div className="px-6 -mt-16 relative z-10 space-y-8 pb-32">
-        <div className="bg-white p-6 rounded-[32px] shadow-xl shadow-ink/5 space-y-4 border-b-4 border-slate-100">
-          <div className="flex justify-between items-start">
-            <h1 className="st-title text-3xl">{kitchen.name}</h1>
-            <div className="bg-primary text-white font-display px-3 py-1 rounded-xl text-lg">25$</div>
-          </div>
-          <p className="st-subtitle font-bold text-sm">650g</p>
+        <div className="bg-white p-6 rounded-[32px] shadow-xl shadow-ink/5 space-y-2 border-b-4 border-slate-100">
+          <h1 className="st-title text-3xl">{kitchen.name}</h1>
           <p className="text-[13px] text-slate-500 font-medium leading-relaxed">
-            Grapes, figs, cheese, eggs, olives, black olives, grapefruit, ham, almonds
+            {kitchen.description}
           </p>
-          
-          <div className="pt-4 space-y-4">
-            <h3 className="font-display text-lg text-secondary">Nutritional value per 100 g</h3>
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                { label: 'Proteins', val: '9 g' },
-                { label: 'Carbs', val: '14 g' },
-                { label: 'Energy', val: '146 kcal' },
-                { label: 'Fats', val: '6 g' },
-              ].map(stat => (
-                <div key={stat.label}>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter line-clamp-1">{stat.label}</p>
-                  <p className="text-[12px] font-black text-secondary">{stat.val}</p>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
 
-        {/* Action Bar */}
-        <div className="flex items-center gap-4">
-           <div className="flex-1 bg-white rounded-2xl p-2 flex items-center justify-between border border-slate-100 shadow-sm">
-             <button className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold active:bg-slate-200">-</button>
-             <span className="font-display text-xl text-primary">2</span>
-             <button className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-900 font-bold active:bg-slate-200">+</button>
-           </div>
-           <button 
-             onClick={() => onAddToCart({ id: 'sample', name: kitchen.name, price: 25, quantity: 1 })}
-             className="flex-[2] funky-btn-primary h-14 flex items-center justify-center"
-           >
-             Add to cart
-           </button>
-        </div>
-
-        {/* Section: Simple Thali configuration (Adapted to funky theme) */}
+        {/* Section: Menu Items */}
         <div className="space-y-6">
           <div className="space-y-1">
-            <p className="text-[10px] font-black text-primary uppercase tracking-widest px-1">Customize</p>
-            <h2 className="font-display text-2xl text-secondary">Build your thali</h2>
+            <p className="text-[10px] font-black text-primary uppercase tracking-widest px-1">Menu</p>
+            <h2 className="font-display text-2xl text-secondary">Our Specialties</h2>
           </div>
           
-          <ThaliCard 
-            badge="FUNKY"
-            title="House Special" 
-            price={120} 
-            description="The most energetic combo in the menu."
-            image="https://images.unsplash.com/photo-1626777552726-4a6b52c67ad5?auto=format&fit=crop&q=80&w=400"
-            onAdd={(options) => onAddToCart({ id: 'thali-p', name: 'House Special', price: 120, quantity: 1, options })}
-          />
+          <div className="space-y-4">
+            <ThaliCard 
+              type="Normal"
+              price={80} 
+              description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice"
+              onAdd={(item) => onAddToCart(item)}
+            />
+            <ThaliCard 
+              type="Special"
+              price={120} 
+              description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice, Extra Item"
+              onAdd={(item) => onAddToCart(item)}
+            />
+          </div>
+
+          <div className="space-y-4 pt-4">
+            <h3 className="font-display text-xl text-secondary px-1">Add-ons</h3>
+            <div className="space-y-3">
+              <AddOnItem name="Extra Roti" price={7} onAdd={(item) => onAddToCart(item)} />
+              <AddOnItem name="Fresh Dahi" price={20} onAdd={(item) => onAddToCart(item)} />
+              <AddOnItem name="Extra Rice" price={30} onAdd={(item) => onAddToCart(item)} />
+              <AddOnItem name="Aloo Paratha" price={30} onAdd={(item) => onAddToCart(item)} />
+              <AddOnItem name="Onion Paratha" price={25} onAdd={(item) => onAddToCart(item)} />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -586,65 +503,73 @@ function MenuScreen({
   );
 }
 
-// --- Funky Thali Card ---
+// --- Updated Thali Card ---
 function ThaliCard({ 
-  badge,
-  title, 
+  type, 
   price, 
   description,
-  image,
   onAdd 
 }: { 
-  badge: string;
-  title: string; 
+  type: 'Normal' | 'Special';
   price: number; 
   description: string;
-  image: string;
-  onAdd: (opt: any) => void 
+  onAdd: (item: CartItem) => void 
 }) {
   const [withRice, setWithRice] = useState(true);
   const [drySabji, setDrySabji] = useState('Aloo Gobi');
+  const [gravySabji, setGravySabji] = useState('Paneer');
+  const [extraRoti, setExtraRoti] = useState(0);
+
+  const totalPrice = price + (extraRoti * 7);
+  const rotiCount = withRice ? 3 : 5;
 
   return (
     <div className="funky-card p-6 space-y-6 relative border-b-8 border-primary/5">
-      <div className="flex items-center gap-4">
-        <div className="w-20 h-20 rounded-[28px] overflow-hidden flex-shrink-0 relative border-4 border-bg-app">
-          <img src={image} className="w-full h-full object-cover" alt={title} />
-          <div className="absolute -top-1 -left-1 bg-amber-400 text-[8px] font-black px-2 py-1 rounded-br-2xl text-ink uppercase rotate-[-5deg]">
-            {badge}
+      <div className="flex justify-between items-start">
+        <div>
+          <h3 className="font-display text-2xl text-secondary">{type} Thali</h3>
+          <p className="text-[11px] text-slate-400 font-bold uppercase tracking-tight mb-2">{description}</p>
+          <div className="flex items-center gap-2">
+            <span className="font-display text-primary text-xl">₹{totalPrice}</span>
+            <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+              {rotiCount + extraRoti} Roti {withRice && "+ Rice"}
+            </span>
           </div>
         </div>
-        <div className="flex-1">
-          <h3 className="font-display text-xl text-secondary">{title}</h3>
-          <p className="text-[11px] text-slate-400 font-bold uppercase tracking-tight">{description}</p>
-          <p className="font-display text-primary text-lg mt-1">₹{price}</p>
+        <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+          <ShoppingBag className="w-6 h-6 text-primary" />
         </div>
       </div>
 
-      <div className="space-y-6">
-        <div className="segmented-control">
-           <button 
-             onClick={() => setWithRice(true)} 
-             className={`segmented-item ${withRice ? 'segmented-item-active' : 'segmented-item-inactive'}`}
-           >
-             WITH RICE
-           </button>
-           <button 
-             onClick={() => setWithRice(false)} 
-             className={`segmented-item ${!withRice ? 'segmented-item-active' : 'segmented-item-inactive'}`}
-           >
-             NO RICE
-           </button>
+      <div className="space-y-5">
+        {/* Rice Toggle */}
+        <div className="space-y-2">
+          <span className="text-[10px] font-black text-secondary tracking-widest uppercase opacity-40 px-1">Base</span>
+          <div className="segmented-control">
+             <button 
+               onClick={() => setWithRice(true)} 
+               className={`segmented-item ${withRice ? 'segmented-item-active' : 'segmented-item-inactive'}`}
+             >
+               WITH RICE
+             </button>
+             <button 
+               onClick={() => setWithRice(false)} 
+               className={`segmented-item ${!withRice ? 'segmented-item-active' : 'segmented-item-inactive'}`}
+             >
+               NO RICE (+2 Roti)
+             </button>
+          </div>
         </div>
 
-        <div className="space-y-3">
-           <span className="text-[10px] font-black text-secondary tracking-widest uppercase opacity-40 px-1">Curry of the day</span>
+        {/* Dry Sabji */}
+        <div className="space-y-2">
+           <span className="text-[10px] font-black text-secondary tracking-widest uppercase opacity-40 px-1">Dry Sabji</span>
            <div className="flex flex-wrap gap-2">
-             {['Aloo Gobi', 'Bhindi', 'Special Veg'].map(s => (
+             {['Aloo Gobi', 'Bhindi', 'Mix Veg'].map(s => (
                <button 
                  key={s} 
                  onClick={() => setDrySabji(s)}
-                 className={`px-5 py-2 rounded-2xl text-[12px] font-bold transition-all ${drySabji === s ? 'bg-primary text-white shadow-lg' : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+                 className={`px-4 py-2 rounded-xl text-[12px] font-bold transition-all ${drySabji === s ? 'bg-primary text-white shadow-md' : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'}`}
                >
                  {s}
                </button>
@@ -652,66 +577,78 @@ function ThaliCard({
            </div>
         </div>
 
+        {/* Gravy Sabji */}
+        <div className="space-y-2">
+           <span className="text-[10px] font-black text-secondary tracking-widest uppercase opacity-40 px-1">Gravy Sabji</span>
+           <div className="flex flex-wrap gap-2">
+             {['Paneer', 'Dal Fry', 'Chole'].map(s => (
+               <button 
+                 key={s} 
+                 onClick={() => setGravySabji(s)}
+                 className={`px-4 py-2 rounded-xl text-[12px] font-bold transition-all ${gravySabji === s ? 'bg-primary text-white shadow-md' : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+               >
+                 {s}
+               </button>
+             ))}
+           </div>
+        </div>
+
+        {/* Extra Roti */}
+        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100 font-bold">
+           <div className="flex flex-col">
+             <span className="text-[11px] text-slate-800">Extra Roti</span>
+             <span className="text-[9px] text-slate-400 uppercase tracking-tighter">₹7 per piece</span>
+           </div>
+           <div className="flex items-center gap-4 bg-white px-3 py-1.5 rounded-xl text-ink">
+             <button onClick={() => setExtraRoti(Math.max(0, extraRoti - 1))} className="text-slate-300 active:text-primary transition-colors cursor-pointer">
+               <Minus className="w-4 h-4" />
+             </button>
+             <span className="font-display text-lg w-4 text-center">{extraRoti}</span>
+             <button onClick={() => setExtraRoti(extraRoti + 1)} className="text-primary active:scale-110 transition-all cursor-pointer">
+               <Plus className="w-4 h-4" />
+             </button>
+           </div>
+        </div>
+
         <button 
-          onClick={() => onAdd({ withRice, drySabji })}
+          onClick={() => onAdd({ 
+            id: `${type.toLowerCase()}-thali-${Date.now()}`, 
+            name: `${type} Thali`, 
+            price: totalPrice, 
+            quantity: 1, 
+            options: { withRice, drySabji, gravySabji, extraRoti } 
+          })}
           className="w-full funky-btn-secondary py-4"
         >
-          Add to bag
+          Add to Bag
         </button>
       </div>
     </div>
   );
 }
 
-// --- Simple Item Component ---
-function SimpleItem({ 
-  id, 
+// --- Add-on Item ---
+function AddOnItem({ 
   name, 
   price, 
-  description,
-  image,
-  onAdd, 
-  onUpdate, 
-  cartItem 
+  onAdd 
 }: { 
-  id: string; 
   name: string; 
   price: number; 
-  description: string;
-  image: string;
-  onAdd: () => void;
-  onUpdate: (id: string, d: number) => void;
-  cartItem?: CartItem;
+  onAdd: (item: CartItem) => void 
 }) {
   return (
-    <div className="flex items-center gap-4 py-2">
-      <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-slate-50 border border-slate-100 transition-transform active:scale-95">
-        <img src={image} className="w-full h-full object-cover" alt={name} />
+    <div className="funky-card p-4 flex items-center justify-between border-b-4 border-slate-50">
+      <div className="flex flex-col">
+        <span className="font-display text-lg text-secondary">{name}</span>
+        <span className="font-display text-primary">₹{price}</span>
       </div>
-      <div className="flex-1">
-        <h4 className="font-bold text-[14px] text-slate-800">{name}</h4>
-        <p className="text-[11px] text-slate-400 font-medium mb-1">{description}</p>
-        <p className="text-[13px] font-bold text-slate-900">₹{price}</p>
-      </div>
-      
-      {cartItem ? (
-        <div className="flex items-center gap-3 bg-primary/10 px-2 py-1.5 rounded-xl">
-          <button onClick={() => onUpdate(id, -1)} className="p-1 bg-white rounded-lg shadow-sm active:scale-90 transition-transform">
-            <Minus className="w-3.5 h-3.5" />
-          </button>
-          <span className="font-black text-[12px] w-4 text-center text-primary">{cartItem.quantity}</span>
-          <button onClick={() => onUpdate(id, 1)} className="p-1 bg-white rounded-lg shadow-sm active:scale-90 transition-transform">
-            <Plus className="w-3.5 h-3.5 text-primary" />
-          </button>
-        </div>
-      ) : (
-        <button 
-          onClick={onAdd}
-          className="px-5 py-2 border border-primary text-primary rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-transform"
-        >
-          Add
-        </button>
-      )}
+      <button 
+        onClick={() => onAdd({ id: `addon-${name.toLowerCase().replace(' ', '-')}`, name, price, quantity: 1 })}
+        className="px-6 py-2 bg-secondary text-white rounded-xl font-display text-sm active:scale-95 transition-transform"
+      >
+        ADD
+      </button>
     </div>
   );
 }
