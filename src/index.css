@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Inter", sans-serif;
+  
+  --color-primary: #F27D26; /* st-orange */
+  --color-primary-dark: #D97706;
+  --color-bg-app: #F8F8F8; /* st-bg */
+  --color-ink: #141414; /* st-ink */
+  
+  --radius-card: 20px;
+  --radius-sheet: 28px;
+  --radius-pill: 20px;
+}
+
+@layer base {
+  body {
+    @apply bg-gray-200 text-ink antialiased font-sans;
+  }
+}
+
+/* Theme specific utilities */
+.phone-frame {
+  @apply bg-white shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] border-[8px] border-ink;
+}
+
+.st-title {
+  @apply text-[24px] font-[800] text-primary tracking-[-0.5px];
+}
+
+.st-subtitle {
+  @apply text-[13px] text-[#666] mt-[2px];
+}
+
+.rating-badge {
+  @apply bg-[#FFF9E6] text-[#D97706] text-[11px] font-[700] px-[8px] py-[2px] rounded-[6px] flex items-center gap-[2px];
+}
+
+.pill-style {
+  @apply px-[14px] py-[6px] rounded-pill text-[12px] font-[500] border-[1.5px] border-[#E5E5E5] text-[#666] transition-all;
+}
+
+.pill-style-active {
+  @apply bg-[#FFF7ED] border-primary text-primary;
+}
+
+.stepper-bg {
+  @apply bg-[#F3F4F6] p-[4px_8px] rounded-[12px] flex items-center gap-[12px];
+}
+
+.stepper-btn-style {
+  @apply w-[24px] h-[24px] rounded-[6px] bg-white flex items-center justify-center font-bold text-primary shadow-[0_2px_4px_rgba(0,0,0,0.05)];
+}
+
+.cart-bar-style {
+  @apply bg-ink rounded-[16px] h-[56px] flex items-center justify-between px-[20px] text-white shadow-[0_10px_20px_rgba(0,0,0,0.2)];
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
