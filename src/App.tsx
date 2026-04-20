@@ -20,7 +20,7 @@ import {
   Heart,
   Menu as MenuIcon
 } from "lucide-react";
-import { useState, useMemo, useEffect, Key, ChangeEvent } from "react";
+import { useState, useMemo, useEffect, useRef, Key, ChangeEvent } from "react";
 import React from "react";
 import { 
   BrowserRouter, 
@@ -68,6 +68,7 @@ interface Order {
   total: number;
   status: 'pending' | 'preparing' | 'on-the-way' | 'delivered';
   time: string;
+  timestamp: number; // Added for history filtering
 }
 
 // Mock Data
@@ -115,6 +116,7 @@ const INITIAL_ORDERS: Order[] = [
     total: 167,
     status: 'pending',
     time: '12:45 PM',
+    timestamp: Date.now(),
     items: [
       { id: 't1', name: 'Normal Thali', price: 80, quantity: 1, options: { gravy: 'Paneer', dry: 'Bhindi', extraRoti: 2 } },
       { id: 'a1', name: 'Extra Roti', price: 7, quantity: 1 }
@@ -127,9 +129,30 @@ const INITIAL_ORDERS: Order[] = [
     total: 120,
     status: 'preparing',
     time: '01:15 PM',
+    timestamp: Date.now(),
     items: [
       { id: 't2', name: 'Special Thali', price: 120, quantity: 1 }
     ]
+  },
+  {
+    id: '0000',
+    customerName: 'History Test',
+    customerPhone: '+91 00000 00000',
+    total: 150,
+    status: 'delivered',
+    time: 'Yesterday',
+    timestamp: Date.now() - (36 * 60 * 60 * 1000), // 36 hours ago (within 2 days)
+    items: [{ id: 't1', name: 'Normal Thali', price: 80, quantity: 2 }]
+  },
+  {
+    id: 'X001',
+    customerName: 'Old Order',
+    customerPhone: '+91 00000 00000',
+    total: 200,
+    status: 'delivered',
+    time: '3 Days Ago',
+    timestamp: Date.now() - (4 * 24 * 60 * 60 * 1000), // 4 days ago (should be hidden in history)
+    items: [{ id: 't1', name: 'Special Thali', price: 100, quantity: 2 }]
   }
 ];
 
@@ -245,7 +268,7 @@ function AppContent() {
         <AnimatePresence mode="wait">
           <motion.div 
             key={location.pathname}
-            className="flex-1 flex flex-col overflow-hidden"
+            className={`flex-1 flex flex-col ${location.pathname === '/admin' ? 'overflow-y-auto' : 'overflow-hidden'}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -942,11 +965,34 @@ function SuccessScreen({ summary }: { summary: CartItem[] }) {
 
 // --- Admin Section ---
 function AdminScreen() {
-  const [adminStep, setAdminStep] = useState<'AUTH' | 'DASHBOARD'>('AUTH');
+  const navigate = useNavigate();
+  const [adminStep, setAdminStep] = useState<'PHONE' | 'OTP' | 'DASHBOARD'>('PHONE');
+  const [adminPhone, setAdminPhone] = useState('');
+  const [adminOtp, setAdminOtp] = useState(['', '', '', '']);
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
-  const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'history' | 'stats'>('orders');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>(KITCHENS[0].menu || []);
+  const [showAdminMenu, setShowAdminMenu] = useState(false);
+
+  const otpRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
+
+  const handleOtpChange = (index: number, value: string) => {
+    if (value.length > 1) value = value[value.length - 1]; // Only take last char
+    const newOtp = [...adminOtp];
+    newOtp[index] = value;
+    setAdminOtp(newOtp);
+
+    if (value && index < 3) {
+      otpRefs[index + 1].current?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
+    if (e.key === 'Backspace' && !adminOtp[index] && index > 0) {
+      otpRefs[index - 1].current?.focus();
+    }
+  };
 
   const updateOrderStatus = (orderId: string, nextStatus: Order['status']) => {
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
@@ -960,115 +1006,347 @@ function AdminScreen() {
     setMenuItems(prev => prev.map(item => item.id === id ? { ...item, price: newPrice } : item));
   };
 
-  if (adminStep === 'AUTH') {
+  const twoDaysAgo = Date.now() - (2 * 24 * 60 * 60 * 1000);
+  const historyOrders = orders.filter(o => o.status === 'delivered' && o.timestamp >= twoDaysAgo);
+  const activeOrders = orders.filter(o => o.status !== 'delivered');
+
+  if (adminStep === 'PHONE') {
     return (
-      <div className="flex-1 flex flex-col p-6 space-y-6 pt-20">
-        <div>
-          <h1 className="font-display text-4xl text-secondary">Kitchen Log</h1>
-          <p className="text-slate-400 font-bold text-sm">Enter admin credentials to start cooking</p>
+      <div className="flex-1 flex flex-col overflow-hidden bg-bg-app relative">
+        {/* Top Section - 60% Image */}
+        <div className="h-[60%] w-full relative">
+          <img 
+            src="https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&q=80&w=1000" 
+            alt="Kitchen Illustration" 
+            className="w-full h-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-bg-app via-transparent to-transparent" />
+          
+          {/* Funky Decorations */}
+          <motion.div 
+            animate={{ rotate: [0, 10, 0] }}
+            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute top-10 right-10 w-24 h-24 bg-primary/20 rounded-full blur-3xl"
+          />
+          <motion.div 
+            animate={{ rotate: [0, -15, 0], scale: [1, 1.1, 1] }}
+            transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute bottom-20 left-10 w-32 h-32 bg-secondary/10 rounded-full blur-2xl"
+          />
         </div>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Admin Number</label>
-            <input type="tel" placeholder="+91 99999 88888" className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none" />
+
+        {/* Bottom Section - 40% Form */}
+        <div className="flex-1 px-8 pt-6 pb-12 flex flex-col justify-between -mt-12 relative z-10 bg-bg-app rounded-t-[40px] shadow-2xl">
+          <div className="space-y-6">
+            <div className="text-center px-4">
+              <h1 className="font-display text-4xl text-secondary leading-tight">
+                Kitchen <span className="text-primary underline decoration-wavy underline-offset-8">Log</span>
+              </h1>
+              <p className="text-slate-400 font-bold text-sm mt-3">Welcome back, Chef! Time to manage your kitchen magic.</p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Admin Number</label>
+                <input 
+                  type="tel" 
+                  value={adminPhone}
+                  onChange={(e) => setAdminPhone(e.target.value)}
+                  placeholder="+91 99999 88888" 
+                  className="w-full bg-white border-2 border-slate-50 shadow-sm rounded-2xl py-4 px-6 focus:ring-4 focus:ring-primary/10 text-sm font-bold outline-none transition-all" 
+                />
+              </div>
+              <button 
+                onClick={() => setAdminStep('OTP')}
+                disabled={!adminPhone}
+                className="w-full funky-btn-primary h-16 text-lg disabled:opacity-50 disabled:grayscale transition-all"
+              >
+                Send Secret Code
+              </button>
+            </div>
           </div>
-          <button 
-            onClick={() => setAdminStep('DASHBOARD')}
-            className="w-full funky-btn-primary h-14"
-          >
-            Enter Dashboard
-          </button>
+          
+          <div className="text-center">
+            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Powered by Stuva Admin</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (adminStep === 'OTP') {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden bg-bg-app relative">
+        <div className="h-[60%] w-full relative">
+          <img 
+            src="https://images.unsplash.com/photo-1590577976322-3d2d6e2133de?auto=format&fit=crop&q=80&w=1000" 
+            alt="OTP Illustration" 
+            className="w-full h-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-bg-app via-transparent to-transparent" />
+        </div>
+
+        <div className="flex-1 px-8 pt-6 pb-12 flex flex-col justify-between -mt-12 relative z-10 bg-bg-app rounded-t-[40px] shadow-2xl">
+          <div className="space-y-6">
+            <div className="text-center px-4">
+              <h1 className="font-display text-4xl text-secondary leading-tight">
+                Verify <span className="text-primary underline decoration-wavy underline-offset-8">Admin</span>
+              </h1>
+              <p className="text-slate-400 font-bold text-sm mt-3">We've sent a 4-digit code to {adminPhone}</p>
+            </div>
+
+            <div className="space-y-8">
+              <div className="flex justify-between gap-3 px-4">
+                {adminOtp.map((digit, i) => (
+                  <input
+                    key={i}
+                    ref={otpRefs[i]}
+                    type="number"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleOtpChange(i, e.target.value)}
+                    onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                    className="w-14 h-16 bg-white border-2 border-slate-50 shadow-sm rounded-2xl text-center text-2xl font-display text-primary outline-none focus:ring-4 focus:ring-primary/10 transition-all no-scrollbar"
+                  />
+                ))}
+              </div>
+
+              <button 
+                onClick={() => setAdminStep('DASHBOARD')}
+                disabled={adminOtp.some(d => !d)}
+                className="w-full funky-btn-primary h-16 text-lg disabled:opacity-50 disabled:grayscale transition-all"
+              >
+                Enter Dashboard
+              </button>
+            </div>
+          </div>
+
+          <div className="text-center">
+            <button onClick={() => setAdminStep('PHONE')} className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline decoration-wavy underline-offset-4">Change Number</button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Admin Header */}
-      <header className="px-6 pt-8 pb-4 flex justify-between items-center bg-white shrink-0">
-        <div className="flex items-center gap-3">
-          <div>
-            <h2 className="font-display text-2xl text-secondary leading-none">Thaat Baat</h2>
-            <p className="text-[10px] font-black text-primary uppercase tracking-widest mt-0.5">Admin Central</p>
+    <div className="flex-1 flex flex-col bg-bg-app relative">
+      {/* Admin Header - Home Inspired */}
+      <header className="px-6 pt-8 pb-4 flex items-center justify-between shrink-0">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-1.5 text-slate-400 mb-1">
+            <Clock className="w-3.5 h-3.5" />
+            <span className="text-[10px] font-black uppercase tracking-widest">Kitchen Status</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="font-display text-lg text-secondary">Thaat Baat</span>
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-[10px] font-black text-green-600 uppercase tracking-widest">Open</span>
           </div>
         </div>
-        <div className="flex gap-2">
-            <div className="bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/10 text-center">
-              <div className="text-[8px] font-black text-primary uppercase tracking-tight">Orders</div>
-              <div className="text-sm font-display leading-none">{orders.length}</div>
-            </div>
-            <div className="bg-green-50 px-3 py-1.5 rounded-lg border border-green-100 text-center">
-              <div className="text-[8px] font-black text-green-600 uppercase tracking-tight">Today</div>
-              <div className="text-sm font-display leading-none text-green-700">₹{orders.reduce((a, b) => a + b.total, 0)}</div>
-            </div>
-        </div>
+
+        <button 
+          onClick={() => setShowAdminMenu(!showAdminMenu)}
+          className="w-12 h-12 bg-white shadow-xl shadow-ink/5 rounded-2xl flex items-center justify-center border border-slate-50 transition-transform active:scale-95"
+        >
+          <div className="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center">
+            <MenuIcon className="w-5 h-5 text-secondary" />
+          </div>
+        </button>
       </header>
 
-      {/* Tabs */}
-      <div className="px-6 flex gap-2 mb-4 shrink-0">
-        <button 
-          onClick={() => setActiveTab('orders')}
-          className={`px-6 py-2 rounded-xl font-display text-sm transition-all ${activeTab === 'orders' ? 'bg-secondary text-white shadow-lg shrink-0' : 'bg-slate-100 text-slate-400 shrink-0'}`}
-        >
-          Active Orders
-        </button>
-        <button 
-          onClick={() => setActiveTab('menu')}
-          className={`px-6 py-2 rounded-xl font-display text-sm transition-all ${activeTab === 'menu' ? 'bg-secondary text-white shadow-lg shrink-0' : 'bg-slate-100 text-slate-400 shrink-0'}`}
-        >
-          Menu Today
-        </button>
+      {/* Hero-like Title */}
+      <div className="px-6 space-y-2 mb-6">
+        <h1 className="font-display text-3xl text-secondary leading-tight">
+          Manage magic, <br />
+          delivered by <span className="text-primary underline decoration-wavy underline-offset-8">you.</span>
+        </h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pb-20 no-scrollbar">
-        {activeTab === 'orders' ? (
-          <div className="space-y-4">
-            {orders.map(order => (
-              <div key={order.id} className="funky-card p-4 space-y-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="flex items-center gap-2">
-                       <span className="font-display text-lg text-secondary">#{order.id}</span>
-                       <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${
-                         order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 
-                         order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
-                         order.status === 'on-the-way' ? 'bg-purple-100 text-purple-700' :
-                         'bg-green-100 text-green-700'
-                       }`}>
-                         {order.status.replace('-', ' ')}
-                       </span>
-                    </div>
-                    <p className="text-xs font-bold text-slate-400">{order.customerName} • {order.time}</p>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-display text-xl text-primary">₹{order.total}</div>
-                  </div>
-                </div>
+      {/* Admin Menu Dropdown */}
+      <AnimatePresence>
+        {showAdminMenu && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setShowAdminMenu(false)}
+              className="absolute inset-0 bg-secondary/20 backdrop-blur-sm z-50"
+            />
+            <motion.div 
+              initial={{ opacity: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
+              className="absolute top-24 right-6 w-48 bg-white rounded-2xl shadow-2xl z-[60] py-2 border border-slate-100"
+            >
+              {[
+                { id: 'orders', label: 'Orders Dashboard', icon: ShoppingBag },
+                { id: 'menu', label: 'Menu Controls', icon: MenuIcon },
+                { id: 'history', label: 'Order History', icon: Clock },
+                { id: 'stats', label: 'Store Stats', icon: Star },
+              ].map(item => (
+                <button 
+                  key={item.id}
+                  onClick={() => { setActiveTab(item.id as any); setShowAdminMenu(false); }}
+                  className={`w-full px-4 py-3 flex items-center gap-3 text-sm font-bold transition-colors ${activeTab === item.id ? 'text-primary bg-primary/5' : 'text-secondary hover:bg-slate-50'}`}
+                >
+                  <item.icon className="w-4 h-4" />
+                  {item.label}
+                </button>
+              ))}
+              <div className="h-px bg-slate-100 my-1" />
+              <button 
+                onClick={() => { setAdminStep('AUTH'); setShowAdminMenu(false); }}
+                className="w-full px-4 py-3 flex items-center gap-3 text-sm font-bold text-red-500 hover:bg-red-50"
+              >
+                <Plus className="w-4 h-4 rotate-45" />
+                Logout
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => setSelectedOrder(order)}
-                    className="flex-1 bg-slate-100 py-2.5 rounded-xl font-display text-[10px] uppercase tracking-widest text-slate-500 hover:bg-slate-200"
-                  >
-                    View Details
-                  </button>
-                  {order.status === 'pending' && (
-                    <button onClick={() => updateOrderStatus(order.id, 'preparing')} className="flex-[2] bg-primary text-white py-2.5 rounded-xl font-display text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-95">Accept Order</button>
-                  )}
-                  {order.status === 'preparing' && (
-                    <button onClick={() => updateOrderStatus(order.id, 'on-the-way')} className="flex-[2] bg-blue-600 text-white py-2.5 rounded-xl font-display text-[10px] uppercase tracking-widest shadow-lg shadow-blue/20 transition-all active:scale-95">Out for Delivery</button>
-                  )}
-                  {order.status === 'on-the-way' && (
-                    <button onClick={() => updateOrderStatus(order.id, 'delivered')} className="flex-[2] bg-secondary text-white py-2.5 rounded-xl font-display text-[10px] uppercase tracking-widest shadow-lg shadow-secondary/20 transition-all active:scale-95">Mark Delivered</button>
-                  )}
-                </div>
+      {/* Enhanced Stats Cards */}
+      {activeTab === 'orders' && (
+        <div className="px-6 py-4 flex gap-4 overflow-x-auto no-scrollbar shrink-0">
+          <div className="bg-white p-4 rounded-3xl border-2 border-slate-50 min-w-[140px] shadow-sm relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-2 opacity-10">
+              <ShoppingBag className="w-12 h-12" />
+            </div>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Active Now</p>
+            <p className="text-2xl font-display text-secondary">{activeOrders.length}</p>
+            <div className="mt-2 w-full bg-slate-50 h-1 rounded-full overflow-hidden">
+              <div className="bg-primary h-full rounded-full" style={{ width: '65%' }} />
+            </div>
+          </div>
+          
+          <div className="bg-white p-4 rounded-3xl border-2 border-slate-50 min-w-[140px] shadow-sm relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-2 opacity-10">
+              <CheckCircle2 className="w-12 h-12" />
+            </div>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Delivered</p>
+            <p className="text-2xl font-display text-green-600">{orders.filter(o => o.status === 'delivered').length}</p>
+            <div className="mt-2 text-[8px] font-bold text-slate-300">Great job today!</div>
+          </div>
+        </div>
+      )}
+
+    <div className="flex-1 px-6 pb-20 no-scrollbar">
+      <div className="mb-6 flex items-center justify-between">
+        <h3 className="font-display text-2xl text-secondary">
+          {activeTab === 'orders' ? 'Live Command' : activeTab === 'history' ? 'Order History' : activeTab === 'menu' ? 'Menu Controls' : 'Store Performance'}
+        </h3>
+        <div className="w-12 h-1.5 bg-primary/10 rounded-full" />
+      </div>
+
+      {activeTab === 'orders' ? (
+          <div className="space-y-10 pb-8">
+            {/* New Orders Section */}
+            <div>
+              <div className="flex items-center gap-2 mb-6">
+                <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] whitespace-nowrap">new order</span>
+                <div className="flex-1 h-px border-t-2 border-dashed border-slate-100" />
+              </div>
+              <div className="space-y-4">
+                {orders.filter(o => o.status === 'pending').length > 0 ? (
+                  orders.filter(o => o.status === 'pending').map(order => (
+                    <div key={order.id}>
+                      <AdminOrderCard order={order} onUpdate={updateOrderStatus} onView={setSelectedOrder} />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center py-4 text-xs font-bold text-slate-300 italic">No new arrivals</p>
+                )}
+              </div>
+            </div>
+
+            {/* Preparing Section */}
+            <div>
+              <div className="flex items-center gap-2 mb-6">
+                <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] whitespace-nowrap">cooking now</span>
+                <div className="flex-1 h-px border-t-2 border-dashed border-slate-100" />
+              </div>
+              <div className="space-y-4">
+                {orders.filter(o => o.status === 'preparing').length > 0 ? (
+                  orders.filter(o => o.status === 'preparing').map(order => (
+                    <div key={order.id}>
+                      <AdminOrderCard order={order} onUpdate={updateOrderStatus} onView={setSelectedOrder} />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center py-4 text-xs font-bold text-slate-300 italic">Kitchen is idle</p>
+                )}
+              </div>
+            </div>
+
+            {/* On the Way Section */}
+            <div>
+              <div className="flex items-center gap-2 mb-6">
+                <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] whitespace-nowrap">out for delivery</span>
+                <div className="flex-1 h-px border-t-2 border-dashed border-slate-100" />
+              </div>
+              <div className="space-y-4">
+                {orders.filter(o => o.status === 'on-the-way').length > 0 ? (
+                  orders.filter(o => o.status === 'on-the-way').map(order => (
+                    <div key={order.id}>
+                      <AdminOrderCard order={order} onUpdate={updateOrderStatus} onView={setSelectedOrder} />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center py-4 text-xs font-bold text-slate-300 italic">None on the road</p>
+                )}
+              </div>
+            </div>
+
+            {/* Recently Delivered Section */}
+            <div>
+              <div className="flex items-center gap-2 mb-6">
+                <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] whitespace-nowrap">delivered</span>
+                <div className="flex-1 h-px border-t-2 border-dashed border-slate-100" />
+              </div>
+              <div className="space-y-4">
+                {historyOrders.length > 0 ? (
+                  historyOrders.map(order => (
+                    <div key={order.id}>
+                      <AdminOrderCard order={order} onUpdate={updateOrderStatus} onView={setSelectedOrder} />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center py-4 text-xs font-bold text-slate-300 italic">No completions in last 2 days</p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : activeTab === 'history' ? (
+          <div className="space-y-4 pb-4">
+            <div className="p-3 bg-primary/5 rounded-2xl border border-primary/10 mb-4">
+               <p className="text-[10px] font-black text-primary uppercase text-center tracking-widest">Showing orders from last 2 days</p>
+            </div>
+            {historyOrders.map(order => (
+              <div key={order.id} className="bg-white border-2 border-slate-50 p-4 rounded-2xl opacity-80 grayscale-[0.5]">
+                 <div className="flex justify-between items-center">
+                   <div>
+                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> {order.time}
+                     </p>
+                     <h4 className="font-display text-lg text-secondary">#{order.id}</h4>
+                     <p className="text-xs font-bold text-slate-500">{order.customerName}</p>
+                   </div>
+                   <div className="text-right">
+                     <p className="font-display text-primary text-xl">₹{order.total}</p>
+                     <button onClick={() => setSelectedOrder(order)} className="text-[10px] font-black text-secondary uppercase tracking-widest mt-1 hover:underline">Details</button>
+                   </div>
+                 </div>
               </div>
             ))}
+            {historyOrders.length === 0 && <div className="py-20 text-center opacity-40 font-display">History is clear</div>}
           </div>
-        ) : (
-          <div className="space-y-6">
-            <section className="space-y-3">
+        ) : activeTab === 'menu' ? (
+          <div className="space-y-6 pb-4">
+             {/* Menu Management UI (same as before but integrated) */}
+             <section className="space-y-3">
               <h3 className="font-display text-xl text-secondary">Main Thalis</h3>
               <div className="space-y-2">
                 {menuItems.filter(i => i.category === 'thali').map(item => (
@@ -1095,7 +1373,6 @@ function AdminScreen() {
                 ))}
               </div>
             </section>
-
             <section className="space-y-3">
               <h3 className="font-display text-xl text-secondary">Add-ons</h3>
               <div className="grid grid-cols-2 gap-3">
@@ -1116,73 +1393,181 @@ function AdminScreen() {
               </div>
             </section>
           </div>
+        ) : (
+          <div className="py-10 space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+               <div className="bg-white p-6 rounded-3xl border-b-8 border-primary/10 text-center">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Orders</p>
+                  <p className="text-4xl font-display text-primary">{orders.length}</p>
+               </div>
+               <div className="bg-white p-6 rounded-3xl border-b-8 border-secondary/10 text-center">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Revenue</p>
+                  <p className="text-4xl font-display text-secondary">₹{orders.reduce((a,b) => a+b.total, 0)}</p>
+               </div>
+            </div>
+            <div className="bg-white p-6 rounded-3xl space-y-4">
+               <h4 className="font-display text-xl text-secondary">Kitchen Health</h4>
+               <div className="space-y-3">
+                 <div className="flex justify-between items-center text-sm font-bold">
+                    <span className="text-slate-400">Customer Satisfaction</span>
+                    <span className="text-primary">98%</span>
+                 </div>
+                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div className="bg-primary w-[98%] h-full rounded-full" />
+                 </div>
+                 <div className="flex justify-between items-center text-sm font-bold">
+                    <span className="text-slate-400">Avg Preparation Time</span>
+                    <span className="text-secondary">12 mins</span>
+                 </div>
+               </div>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* Order Details Modal */}
-      <AnimatePresence>
-        {selectedOrder && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-secondary/80 z-[200] backdrop-blur-sm" onClick={() => setSelectedOrder(null)} />
-            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[40px] p-8 z-[210] shadow-2xl space-y-6">
-               <div className="sheet-handle mb-4" />
-               <div className="flex justify-between items-start">
-                 <div>
-                   <h2 className="font-display text-3xl text-secondary">Order Details</h2>
-                   <p className="text-slate-400 font-bold">#{selectedOrder.id} • {selectedOrder.time}</p>
-                 </div>
-                 <button onClick={() => setSelectedOrder(null)} className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center"><Plus className="rotate-45 text-slate-400" /></button>
-               </div>
-
-               <div className="space-y-4">
-                 <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-3xl">
-                   <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-primary shadow-sm"><User /></div>
-                   <div>
-                     <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Customer</p>
-                     <p className="font-display text-lg text-secondary leading-none">{selectedOrder.customerName}</p>
-                   </div>
-                   <a href={`tel:${selectedOrder.customerPhone}`} className="ml-auto w-12 h-12 bg-primary text-white rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20 active:scale-90 transition-transform"><Phone /></a>
-                 </div>
-
-                 <div className="space-y-3 max-h-[300px] overflow-y-auto no-scrollbar py-2">
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Order Summary</p>
-                   {selectedOrder.items.map((item, i) => (
-                     <div key={i} className="flex justify-between items-start p-2 border-b border-slate-50 last:border-0">
-                       <div>
-                         <div className="flex items-center gap-2">
-                           <span className="font-display text-primary">{item.quantity}×</span>
-                           <span className="font-bold text-secondary">{item.name}</span>
-                         </div>
-                         {item.options && (
-                           <div className="text-[10px] text-slate-400 font-bold ml-6 mt-1 space-y-0.5">
-                             {item.options.gravy && <div>• {item.options.gravy} Gravy</div>}
-                             {item.options.dry && <div>• {item.options.dry} Dry</div>}
-                             {item.options.extraRoti > 0 && <div>• +{item.options.extraRoti} Extra Roti</div>}
-                             {item.options.withRice !== undefined && <div>• {item.options.withRice ? 'With Rice' : '5 Roti instead of rice'}</div>}
-                           </div>
-                         )}
-                       </div>
-                       <span className="font-display text-secondary">₹{item.price * item.quantity}</span>
-                     </div>
-                   ))}
-                 </div>
-                 
-                 <div className="pt-4 border-t-2 border-dashed border-slate-100 flex justify-between items-center px-2">
-                   <span className="font-display text-xl text-secondary">Total Amount</span>
-                   <span className="font-display text-3xl text-primary">₹{selectedOrder.total}</span>
-                 </div>
-               </div>
-
-               <button 
-                  className="w-full funky-btn-secondary h-16 text-lg"
-                  onClick={() => setSelectedOrder(null)}
-               >
-                 Close Summary
-               </button>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <OrderDetailsSheet order={selectedOrder} onClose={() => setSelectedOrder(null)} />
     </div>
+  );
+}
+
+// Helper Components for Admin Screen
+function AdminOrderCard({ order, onUpdate, onView }: { order: Order, onUpdate: any, onView: any }) {
+  return (
+    <div className="bg-white rounded-[32px] p-5 shadow-xl shadow-ink/5 border border-slate-50 relative overflow-hidden group">
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+             <span className="font-display text-xl text-secondary">#{order.id}</span>
+             <StatusBadge status={order.status} />
+          </div>
+          <div className="flex items-center gap-1.5 text-slate-400">
+            <User className="w-3 h-3" />
+            <p className="text-xs font-bold">{order.customerName}</p>
+            <span className="text-slate-200">•</span>
+            <Clock className="w-3 h-3" />
+            <p className="text-xs font-bold">{order.time}</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest leading-none mb-1">Total</p>
+          <div className="font-display text-2xl text-primary leading-none">₹{order.total}</div>
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        <button 
+          onClick={() => onView(order)}
+          className="flex-1 bg-slate-50 text-slate-500 py-3 rounded-2xl font-display text-[10px] uppercase tracking-widest hover:bg-slate-100 transition-colors"
+        >
+          Details
+        </button>
+        {order.status === 'pending' && (
+          <button 
+            onClick={() => onUpdate(order.id, 'preparing')} 
+            className="flex-[2] bg-primary text-white py-3 rounded-2xl font-display text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-95"
+          >
+            Accept Order
+          </button>
+        )}
+        {order.status === 'preparing' && (
+          <button 
+            onClick={() => onUpdate(order.id, 'on-the-way')} 
+            className="flex-[2] bg-blue-600 text-white py-3 rounded-2xl font-display text-[10px] uppercase tracking-widest shadow-lg shadow-blue/20 transition-all active:scale-95"
+          >
+            Out for Delivery
+          </button>
+        )}
+        {order.status === 'on-the-way' && (
+          <button 
+            onClick={() => onUpdate(order.id, 'delivered')} 
+            className="flex-[2] bg-secondary text-white py-3 rounded-2xl font-display text-[10px] uppercase tracking-widest shadow-lg shadow-secondary/20 transition-all active:scale-95"
+          >
+            Mark Delivered
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: Order['status'] }) {
+  const styles = {
+    pending: 'bg-yellow-100 text-yellow-700',
+    preparing: 'bg-blue-100 text-blue-700',
+    'on-the-way': 'bg-purple-100 text-purple-700',
+    delivered: 'bg-green-100 text-green-700'
+  };
+  return (
+    <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${styles[status]}`}>
+      {status.replace('-', ' ')}
+    </span>
+  );
+}
+
+function OrderDetailsSheet({ order, onClose }: { order: Order | null, onClose: () => void }) {
+  return (
+    <AnimatePresence>
+      {order && (
+        <>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-secondary/80 z-[200] backdrop-blur-sm" onClick={onClose} />
+          <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[40px] p-8 z-[210] shadow-2xl space-y-6">
+             <div className="sheet-handle mb-4" />
+             <div className="flex justify-between items-start">
+               <div>
+                 <h2 className="font-display text-3xl text-secondary">Order Details</h2>
+                 <p className="text-slate-400 font-bold">#{order.id} • {order.time}</p>
+               </div>
+               <button onClick={onClose} className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center"><Plus className="rotate-45 text-slate-400" /></button>
+             </div>
+
+             <div className="space-y-4">
+               <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-3xl">
+                 <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-primary shadow-sm"><User /></div>
+                 <div>
+                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Customer</p>
+                   <p className="font-display text-lg text-secondary leading-none">{order.customerName}</p>
+                 </div>
+                 <a href={`tel:${order.customerPhone}`} className="ml-auto w-12 h-12 bg-primary text-white rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20 active:scale-90 transition-transform"><Phone /></a>
+               </div>
+
+               <div className="space-y-3 max-h-[300px] overflow-y-auto no-scrollbar py-2">
+                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Order Summary</p>
+                 {order.items.map((item, i) => (
+                   <div key={i} className="flex justify-between items-start p-2 border-b border-slate-50 last:border-0">
+                     <div>
+                       <div className="flex items-center gap-2">
+                         <span className="font-display text-primary">{item.quantity}×</span>
+                         <span className="font-bold text-secondary">{item.name}</span>
+                       </div>
+                       {item.options && (
+                         <div className="text-[10px] text-slate-400 font-bold ml-6 mt-1 space-y-0.5">
+                           {item.options.gravy && <div>• {item.options.gravy} Gravy</div>}
+                           {item.options.dry && <div>• {item.options.dry} Dry</div>}
+                           {item.options.extraRoti > 0 && <div>• +{item.options.extraRoti} Extra Roti</div>}
+                           {item.options.withRice !== undefined && <div>• {item.options.withRice ? 'With Rice' : '5 Roti instead of rice'}</div>}
+                         </div>
+                       )}
+                     </div>
+                     <span className="font-display text-secondary">₹{item.price * item.quantity}</span>
+                   </div>
+                 ))}
+               </div>
+               
+               <div className="pt-4 border-t-2 border-dashed border-slate-100 flex justify-between items-center px-2">
+                 <span className="font-display text-xl text-secondary">Total Amount</span>
+                 <span className="font-display text-3xl text-primary">₹{order.total}</span>
+               </div>
+             </div>
+
+             <button 
+                className="w-full funky-btn-secondary h-16 text-lg"
+                onClick={onClose}
+             >
+               Close Summary
+             </button>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
