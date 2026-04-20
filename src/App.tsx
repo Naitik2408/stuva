@@ -49,7 +49,7 @@ interface MenuItem {
   name: string;
   price: number;
   available: boolean;
-  category: 'thali' | 'addon';
+  category: 'thali' | 'dry_sabji' | 'gravy_sabji' | 'others';
 }
 
 interface CartItem {
@@ -84,8 +84,27 @@ const KITCHENS: Kitchen[] = [
     menu: [
       { id: 't1', name: "Normal Thali", price: 80, available: true, category: 'thali' },
       { id: 't2', name: "Special Thali", price: 120, available: true, category: 'thali' },
-      { id: 'a1', name: "Extra Roti", price: 7, available: true, category: 'addon' },
-      { id: 'a2', name: "Fresh Dahi", price: 20, available: true, category: 'addon' },
+      
+      // Dry Sabji Options
+      { id: 'd1', name: "Aloo Gobi", price: 0, available: true, category: 'dry_sabji' },
+      { id: 'd2', name: "Bhindi Masala", price: 0, available: true, category: 'dry_sabji' },
+      { id: 'd3', name: "Mix Veg", price: 0, available: true, category: 'dry_sabji' },
+      { id: 'd4', name: "Aloo Bhujiya", price: 0, available: false, category: 'dry_sabji' },
+      
+      // Gravy Sabji Options
+      { id: 'g1', name: "Paneer Butter Masala", price: 0, available: true, category: 'gravy_sabji' },
+      { id: 'g2', name: "Dal Fry", price: 0, available: true, category: 'gravy_sabji' },
+      { id: 'g3', name: "Chole Masala", price: 0, available: true, category: 'gravy_sabji' },
+      { id: 'g4', name: "Kadhi Pakoda", price: 0, available: false, category: 'gravy_sabji' },
+
+      // Parathas & Others
+      { id: 'p1', name: "Aloo Paratha", price: 30, available: true, category: 'others' },
+      { id: 'p2', name: "Onion Paratha", price: 25, available: true, category: 'others' },
+      { id: 'p3', name: "Plain Paratha", price: 15, available: true, category: 'others' },
+      
+      // Other Addons
+      { id: 'a1', name: "Extra Roti", price: 7, available: true, category: 'others' },
+      { id: 'a2', name: "Fresh Dahi", price: 20, available: true, category: 'others' },
     ]
   },
   { 
@@ -260,6 +279,11 @@ function AppContent() {
 
   const cartTotal = useMemo(() => cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0), [cart]);
 
+  const handleCheckoutPhoneChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+    e.target.value = val;
+  };
+
   return (
     <div className="min-h-screen sm:bg-gray-200 flex justify-center items-center">
       {/* Mobile Frame */}
@@ -293,68 +317,69 @@ function AppContent() {
           </motion.div>
         </AnimatePresence>
 
-        {/* Login & Checkout Bottom Sheet */}
-        <AnimatePresence>
-          {showCheckout && (
-            <>
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowCheckout(false)}
-                className="absolute inset-0 bg-black/60 z-[110]"
-              />
-              <motion.div 
-                initial={{ y: "100%" }}
-                animate={{ y: 0 }}
-                exit={{ y: "100%" }}
-                transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                className="absolute bottom-0 left-0 right-0 bg-white rounded-t-sheet z-[120] p-6 pt-2 shadow-2xl"
-              >
-                <div className="sheet-handle mb-6" />
-                
-                <AnimatePresence mode="wait">
-                  {checkoutStep === 'AUTH' ? (
-                    <motion.div 
-                      key="auth-step"
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className="space-y-6"
-                    >
-                      <div>
-                        <h2 className="text-2xl font-display text-secondary">Join STUVA</h2>
-                        <p className="text-slate-400 font-bold text-sm">Verify your number to place order</p>
+      {/* Login & Checkout Bottom Sheet */}
+      <AnimatePresence>
+        {showCheckout && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowCheckout(false)}
+              className="absolute inset-0 bg-black/60 z-[110]"
+            />
+            <motion.div 
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="absolute bottom-0 left-0 right-0 bg-white rounded-t-sheet z-[120] p-6 pt-2 shadow-2xl"
+            >
+              <div className="sheet-handle mb-6" />
+              
+              <AnimatePresence mode="wait">
+                {checkoutStep === 'AUTH' ? (
+                  <motion.div 
+                    key="auth-step"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="space-y-6"
+                  >
+                    <div>
+                      <h2 className="text-2xl font-display text-secondary">Join STUVA</h2>
+                      <p className="text-slate-400 font-bold text-sm">Verify your number to place order</p>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Phone Number</label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-primary">+91</span>
+                          <input 
+                            type="tel" 
+                            maxLength={10}
+                            onChange={handleCheckoutPhoneChange}
+                            placeholder="9060557296" 
+                            className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-14 pr-4 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none"
+                          />
+                        </div>
                       </div>
                       
-                      <div className="space-y-4">
+                      {!isReturningUser && (
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Phone Number</label>
+                          <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Full Name</label>
                           <div className="relative">
-                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
+                            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
                             <input 
                               type="text" 
-                              defaultValue={isReturningUser ? "+91 91234 56789" : ""}
-                              placeholder="+91 98765 43210" 
+                              placeholder="Name" 
                               className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none"
                             />
                           </div>
                         </div>
-                        
-                        {!isReturningUser && (
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Full Name</label>
-                            <div className="relative">
-                              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
-                              <input 
-                                type="text" 
-                                placeholder="Zesan" 
-                                className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none"
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      )}
+                    </div>
 
                       <button 
                         onClick={proceedToOtp}
@@ -692,26 +717,28 @@ function MenuScreen({
           <div className="space-y-4">
             <ThaliCard 
               type="Normal"
-              price={80} 
+              price={kitchen.menu?.find(i => i.id === 't1')?.price || 80} 
               description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice"
+              dryOptions={kitchen.menu?.filter(i => i.category === 'dry_sabji' && i.available).map(i => i.name) || []}
+              gravyOptions={kitchen.menu?.filter(i => i.category === 'gravy_sabji' && i.available).map(i => i.name) || []}
               onAdd={(item) => onAddToCart(item)}
             />
             <ThaliCard 
               type="Special"
-              price={120} 
+              price={kitchen.menu?.find(i => i.id === 't2')?.price || 120} 
               description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice, Extra Item"
+              dryOptions={kitchen.menu?.filter(i => i.category === 'dry_sabji' && i.available).map(i => i.name) || []}
+              gravyOptions={kitchen.menu?.filter(i => i.category === 'gravy_sabji' && i.available).map(i => i.name) || []}
               onAdd={(item) => onAddToCart(item)}
             />
           </div>
 
           <div className="space-y-4 pt-4">
-            <h3 className="font-display text-xl text-secondary px-1">Add-ons</h3>
+            <h3 className="font-display text-xl text-secondary px-1">More Goodies</h3>
             <div className="space-y-3">
-              <AddOnItem name="Extra Roti" price={7} onAdd={(item) => onAddToCart(item)} />
-              <AddOnItem name="Fresh Dahi" price={20} onAdd={(item) => onAddToCart(item)} />
-              <AddOnItem name="Extra Rice" price={30} onAdd={(item) => onAddToCart(item)} />
-              <AddOnItem name="Aloo Paratha" price={30} onAdd={(item) => onAddToCart(item)} />
-              <AddOnItem name="Onion Paratha" price={25} onAdd={(item) => onAddToCart(item)} />
+              {kitchen.menu?.filter(i => i.category === 'others' && i.available).map(item => (
+                <AddOnItem key={item.id} name={item.name} price={item.price} onAdd={(item) => onAddToCart(item)} />
+              ))}
             </div>
           </div>
         </div>
@@ -760,17 +787,26 @@ function ThaliCard({
   type, 
   price, 
   description,
+  dryOptions,
+  gravyOptions,
   onAdd 
 }: { 
   type: 'Normal' | 'Special';
   price: number; 
   description: string;
+  dryOptions: string[];
+  gravyOptions: string[];
   onAdd: (item: CartItem) => void 
 }) {
   const [withRice, setWithRice] = useState(true);
-  const [drySabji, setDrySabji] = useState('Aloo Gobi');
-  const [gravySabji, setGravySabji] = useState('Paneer');
+  const [drySabji, setDrySabji] = useState(dryOptions[0] || 'Aloo Gobi');
+  const [gravySabji, setGravySabji] = useState(gravyOptions[0] || 'Paneer');
   const [extraRoti, setExtraRoti] = useState(0);
+
+  useEffect(() => {
+    if (dryOptions.length > 0 && !dryOptions.includes(drySabji)) setDrySabji(dryOptions[0]);
+    if (gravyOptions.length > 0 && !gravyOptions.includes(gravySabji)) setGravySabji(gravyOptions[0]);
+  }, [dryOptions, gravyOptions]);
 
   const totalPrice = price + (extraRoti * 7);
   const rotiCount = withRice ? 3 : 5;
@@ -817,7 +853,7 @@ function ThaliCard({
         <div className="space-y-2">
            <span className="text-[10px] font-black text-secondary tracking-widest uppercase opacity-40 px-1">Dry Sabji</span>
            <div className="flex flex-wrap gap-2">
-             {['Aloo Gobi', 'Bhindi', 'Mix Veg'].map(s => (
+             {dryOptions.map(s => (
                <button 
                  key={s} 
                  onClick={() => setDrySabji(s)}
@@ -833,11 +869,11 @@ function ThaliCard({
         <div className="space-y-2">
            <span className="text-[10px] font-black text-secondary tracking-widest uppercase opacity-40 px-1">Gravy Sabji</span>
            <div className="flex flex-wrap gap-2">
-             {['Paneer', 'Dal Fry', 'Chole'].map(s => (
+             {gravyOptions.map(s => (
                <button 
                  key={s} 
                  onClick={() => setGravySabji(s)}
-                 className={`px-4 py-2 rounded-xl text-[12px] font-bold transition-all ${gravySabji === s ? 'bg-primary text-white shadow-md' : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+                 className={`px-4 py-2 rounded-xl text-[12px] font-bold transition-all ${gravySabji === s ? 'bg-secondary text-white shadow-md' : 'bg-white border border-slate-100 text-slate-400 hover:bg-slate-50'}`}
                >
                  {s}
                </button>
@@ -887,7 +923,8 @@ function AddOnItem({
 }: { 
   name: string; 
   price: number; 
-  onAdd: (item: CartItem) => void 
+  onAdd: (item: CartItem) => void;
+  key?: React.Key;
 }) {
   return (
     <div className="funky-card p-4 flex items-center justify-between border-b-4 border-slate-50">
@@ -968,12 +1005,17 @@ function AdminScreen() {
   const navigate = useNavigate();
   const [adminStep, setAdminStep] = useState<'PHONE' | 'OTP' | 'DASHBOARD'>('PHONE');
   const [adminPhone, setAdminPhone] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
   const [adminOtp, setAdminOtp] = useState(['', '', '', '']);
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
   const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'history' | 'stats'>('orders');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>(KITCHENS[0].menu || []);
   const [showAdminMenu, setShowAdminMenu] = useState(false);
+  const [showAddItemForm, setShowAddItemForm] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemPrice, setNewItemPrice] = useState('');
+  const [newItemCategory, setNewItemCategory] = useState<MenuItem['category']>('dry_sabji');
 
   const otpRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
 
@@ -1006,9 +1048,48 @@ function AdminScreen() {
     setMenuItems(prev => prev.map(item => item.id === id ? { ...item, price: newPrice } : item));
   };
 
+  const updateItemName = (id: string, newName: string) => {
+    setMenuItems(prev => prev.map(item => item.id === id ? { ...item, name: newName } : item));
+  };
+
+  const addNewItem = () => {
+    if (!newItemName) return;
+    const newItem: MenuItem = {
+      id: `item-${Date.now()}`,
+      name: newItemName,
+      price: Number(newItemPrice) || 0,
+      available: true,
+      category: newItemCategory
+    };
+    setMenuItems(prev => [...prev, newItem]);
+    setNewItemName('');
+    setNewItemPrice('');
+    setShowAddItemForm(false);
+  };
+
+  const deleteItem = (id: string) => {
+    setMenuItems(prev => prev.filter(item => item.id !== id));
+  };
+
   const twoDaysAgo = Date.now() - (2 * 24 * 60 * 60 * 1000);
-  const historyOrders = orders.filter(o => o.status === 'delivered' && o.timestamp >= twoDaysAgo);
+  const historyOrders = orders.filter(o => {
+    const isHistory = o.status === 'delivered' && o.timestamp >= twoDaysAgo;
+    if (!historySearch) return isHistory;
+    const searchMatch = o.id.includes(historySearch) || o.customerPhone.includes(historySearch);
+    return isHistory && searchMatch;
+  });
   const activeOrders = orders.filter(o => o.status !== 'delivered');
+
+  const stats = useMemo(() => {
+    const today = new Date().setHours(0,0,0,0);
+    const todayOrders = orders.filter(o => o.timestamp >= today);
+    return {
+      totalOrders: orders.length,
+      totalRevenue: orders.reduce((a, b) => a + b.total, 0),
+      todayOrders: todayOrders.length,
+      todayRevenue: todayOrders.reduce((a, b) => a + b.total, 0)
+    };
+  }, [orders]);
 
   if (adminStep === 'PHONE') {
     return (
@@ -1049,17 +1130,21 @@ function AdminScreen() {
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Admin Number</label>
-                <input 
-                  type="tel" 
-                  value={adminPhone}
-                  onChange={(e) => setAdminPhone(e.target.value)}
-                  placeholder="+91 99999 88888" 
-                  className="w-full bg-white border-2 border-slate-50 shadow-sm rounded-2xl py-4 px-6 focus:ring-4 focus:ring-primary/10 text-sm font-bold outline-none transition-all" 
-                />
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">+91</span>
+                  <input 
+                    type="tel" 
+                    maxLength={10}
+                    value={adminPhone}
+                    onChange={(e) => setAdminPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    placeholder="9060557296" 
+                    className="w-full bg-white border-2 border-slate-50 shadow-sm rounded-2xl py-4 pl-14 pr-6 focus:ring-4 focus:ring-primary/10 text-sm font-bold outline-none transition-all" 
+                  />
+                </div>
               </div>
               <button 
                 onClick={() => setAdminStep('OTP')}
-                disabled={!adminPhone}
+                disabled={adminPhone.length !== 10}
                 className="w-full funky-btn-primary h-16 text-lg disabled:opacity-50 disabled:grayscale transition-all"
               >
                 Send Secret Code
@@ -1078,6 +1163,7 @@ function AdminScreen() {
   if (adminStep === 'OTP') {
     return (
       <div className="flex-1 flex flex-col overflow-hidden bg-bg-app relative">
+        {/* Top Section - Consistent with Login */}
         <div className="h-[60%] w-full relative">
           <img 
             src="https://images.unsplash.com/photo-1590577976322-3d2d6e2133de?auto=format&fit=crop&q=80&w=1000" 
@@ -1086,6 +1172,18 @@ function AdminScreen() {
             referrerPolicy="no-referrer"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-bg-app via-transparent to-transparent" />
+          
+          {/* Funky Decorations - Consistent with Login */}
+          <motion.div 
+            animate={{ rotate: [0, -10, 0] }}
+            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute top-10 left-10 w-24 h-24 bg-primary/20 rounded-full blur-3xl"
+          />
+          <motion.div 
+            animate={{ rotate: [0, 15, 0], scale: [1, 1.1, 1] }}
+            transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute bottom-20 right-10 w-32 h-32 bg-secondary/10 rounded-full blur-2xl"
+          />
         </div>
 
         <div className="flex-1 px-8 pt-6 pb-12 flex flex-col justify-between -mt-12 relative z-10 bg-bg-app rounded-t-[40px] shadow-2xl">
@@ -1094,7 +1192,7 @@ function AdminScreen() {
               <h1 className="font-display text-4xl text-secondary leading-tight">
                 Verify <span className="text-primary underline decoration-wavy underline-offset-8">Admin</span>
               </h1>
-              <p className="text-slate-400 font-bold text-sm mt-3">We've sent a 4-digit code to {adminPhone}</p>
+              <p className="text-slate-400 font-bold text-sm mt-3">We've sent magic code to <span className="text-secondary font-black">+91 {adminPhone}</span></p>
             </div>
 
             <div className="space-y-8">
@@ -1321,10 +1419,24 @@ function AdminScreen() {
           </div>
         ) : activeTab === 'history' ? (
           <div className="space-y-4 pb-4">
-            <div className="p-3 bg-primary/5 rounded-2xl border border-primary/10 mb-4">
-               <p className="text-[10px] font-black text-primary uppercase text-center tracking-widest">Showing orders from last 2 days</p>
+            <div className="relative group mb-6">
+              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                <Search className="w-4 h-4 text-secondary/30 group-focus-within:text-primary transition-colors" />
+              </div>
+              <input 
+                type="text" 
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="Search Order # or Phone" 
+                className="w-full bg-white border-2 border-slate-50 focus:border-primary/20 rounded-2xl py-3 pl-10 pr-4 text-xs font-bold transition-all outline-none text-ink placeholder:text-slate-400"
+              />
             </div>
-            {historyOrders.map(order => (
+            
+            <div className="p-3 bg-primary/5 rounded-2xl border border-primary/10 mb-4 text-center">
+               <p className="text-[10px] font-black text-primary uppercase tracking-widest">Showing orders from last 2 days</p>
+            </div>
+            
+            {historyOrders.length > 0 ? historyOrders.map(order => (
               <div key={order.id} className="bg-white border-2 border-slate-50 p-4 rounded-2xl opacity-80 grayscale-[0.5]">
                  <div className="flex justify-between items-center">
                    <div>
@@ -1340,86 +1452,153 @@ function AdminScreen() {
                    </div>
                  </div>
               </div>
-            ))}
-            {historyOrders.length === 0 && <div className="py-20 text-center opacity-40 font-display">History is clear</div>}
+            )) : (
+              historyOrders.length === 0 && <div className="py-20 text-center opacity-40 font-display">History is clear</div>
+            )}
           </div>
         ) : activeTab === 'menu' ? (
-          <div className="space-y-6 pb-4">
-             {/* Menu Management UI (same as before but integrated) */}
-             <section className="space-y-3">
-              <h3 className="font-display text-xl text-secondary">Main Thalis</h3>
-              <div className="space-y-2">
-                {menuItems.filter(i => i.category === 'thali').map(item => (
-                  <div key={item.id} className="bg-white border-2 border-slate-50 p-4 rounded-2xl flex items-center justify-between shadow-sm">
-                    <div>
-                      <h4 className="font-display text-sm text-secondary">{item.name}</h4>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] font-bold text-slate-400">Price:</span>
-                        <input 
-                          type="number" 
-                          value={item.price} 
-                          onChange={(e) => updatePrice(item.id, Number(e.target.value))}
-                          className="w-16 bg-slate-50 rounded-lg px-2 py-1 text-xs font-display text-primary outline-none"
-                        />
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => toggleMenuItem(item.id)}
-                      className={`w-12 h-6 rounded-full transition-all relative ${item.available ? 'bg-primary' : 'bg-slate-200'}`}
-                    >
-                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${item.available ? 'left-7' : 'left-1'}`} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
-            <section className="space-y-3">
-              <h3 className="font-display text-xl text-secondary">Add-ons</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {menuItems.filter(i => i.category === 'addon').map(item => (
-                  <button 
-                    key={item.id}
-                    onClick={() => toggleMenuItem(item.id)}
-                    className={`p-4 rounded-2xl border-2 transition-all text-left ${item.available ? 'border-primary/20 bg-primary/5' : 'border-slate-100 bg-slate-50 grayscale'}`}
-                  >
-                    <div className="flex justify-between items-start mb-1">
-                      <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-xs">🥘</div>
-                      {item.available && <CheckCircle2 className="w-4 h-4 text-primary" />}
-                    </div>
-                    <div className="font-display text-sm text-secondary truncate">{item.name}</div>
-                    <div className="font-display text-xs text-primary">₹{item.price}</div>
-                  </button>
-                ))}
-              </div>
-            </section>
+          <div className="space-y-6 pb-20">
+             {/* Add Item Trigger */}
+             <button 
+               onClick={() => setShowAddItemForm(true)}
+               className="w-full h-16 border-2 border-dashed border-primary/20 rounded-[28px] flex items-center justify-center gap-2 text-primary font-display hover:bg-primary/5 transition-all mb-4"
+             >
+               <Plus className="w-5 h-5" />
+               New Daily Magic Item
+             </button>
+
+             {/* Add Item Modal */}
+             <AnimatePresence>
+               {showAddItemForm && (
+                 <>
+                   <motion.div 
+                     initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                     onClick={() => setShowAddItemForm(false)}
+                     className="fixed inset-0 bg-secondary/40 backdrop-blur-sm z-[100]"
+                   />
+                   <motion.div 
+                     initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }}
+                     className="fixed bottom-10 left-6 right-6 bg-white p-8 rounded-[40px] shadow-2xl z-[110] space-y-6"
+                   >
+                     <h2 className="font-display text-2xl text-secondary">Add New Item</h2>
+                     <div className="space-y-4">
+                       <input 
+                         type="text" value={newItemName} onChange={e => setNewItemName(e.target.value)}
+                         placeholder="Item Name (e.g. Aloo Bhujiya)"
+                         className="w-full bg-slate-50 rounded-2xl p-4 font-bold outline-none border-2 border-transparent focus:border-primary/20"
+                       />
+                       <div className="grid grid-cols-1 gap-3">
+                         <input 
+                           type="text" 
+                           inputMode="numeric"
+                           value={newItemPrice} 
+                           onChange={e => setNewItemPrice(e.target.value.replace(/\D/g, ''))}
+                           placeholder="Price (₹)"
+                           className="w-full bg-slate-50 rounded-2xl p-4 font-bold outline-none border-2 border-transparent focus:border-primary/20"
+                         />
+                         <select 
+                           value={newItemCategory} onChange={e => setNewItemCategory(e.target.value as any)}
+                           className="w-full bg-slate-50 rounded-2xl p-4 font-bold outline-none border-2 border-transparent focus:border-primary/20"
+                         >
+                           <option value="dry_sabji">Dry Sabji</option>
+                           <option value="gravy_sabji">Gravy Sabji</option>
+                           <option value="others">Others (Paratha, etc)</option>
+                         </select>
+                       </div>
+                     </div>
+                     <button onClick={addNewItem} className="w-full funky-btn-primary h-16 text-lg">Save Item</button>
+                   </motion.div>
+                 </>
+               )}
+             </AnimatePresence>
+
+             {/* Sections */}
+             {[
+               { title: 'Main Thalis', cat: 'thali' },
+               { title: 'Daily Dry Sabjis', cat: 'dry_sabji' },
+               { title: 'Daily Gravy Sabjis', cat: 'gravy_sabji' },
+               { title: 'Others (Paratha, Addons)', cat: 'others' }
+             ].map(section => (
+               <section key={section.title} className="space-y-4">
+                 <div className="flex items-center gap-2">
+                   <h3 className="font-display text-xl text-secondary">{section.title}</h3>
+                   <div className="flex-1 h-px bg-slate-100" />
+                 </div>
+                 <div className="space-y-3">
+                   {menuItems.filter(i => i.category === section.cat).map(item => (
+                     <div key={item.id} className="bg-white p-5 rounded-[28px] shadow-sm border border-slate-50 flex flex-col gap-4">
+                       <div className="flex items-center justify-between">
+                         <div className="flex-1 mr-4">
+                           <input 
+                              type="text" value={item.name} 
+                              onChange={e => updateItemName(item.id, e.target.value)}
+                              className="font-display text-base text-secondary bg-transparent outline-none w-full"
+                           />
+                           <div className="flex items-center gap-1.5 mt-1">
+                             <span className="text-[10px] font-bold text-slate-300">₹</span>
+                             <input 
+                               type="text" 
+                               inputMode="numeric"
+                               value={item.price === 0 ? '' : item.price} 
+                               onChange={e => {
+                                 const val = e.target.value.replace(/\D/g, '');
+                                 updatePrice(item.id, val === '' ? 0 : Number(val));
+                               }}
+                               placeholder="0"
+                               className="bg-transparent text-sm font-black text-primary outline-none w-16"
+                             />
+                           </div>
+                         </div>
+                         <div className="flex items-center gap-3">
+                           {section.cat !== 'thali' && (
+                             <button 
+                               onClick={() => deleteItem(item.id)}
+                               className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-50 text-red-400 active:scale-90 transition-transform"
+                             >
+                                <Plus className="w-4 h-4 rotate-45" />
+                             </button>
+                           )}
+                           <button 
+                             onClick={() => toggleMenuItem(item.id)}
+                             className={`w-12 h-6 rounded-full transition-all relative ${item.available ? 'bg-primary' : 'bg-slate-200'}`}
+                           >
+                             <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${item.available ? 'left-7' : 'left-1'}`} />
+                           </button>
+                         </div>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               </section>
+             ))}
           </div>
         ) : (
-          <div className="py-10 space-y-6">
+          <div className="space-y-6 pb-20 mt-4">
             <div className="grid grid-cols-2 gap-4">
-               <div className="bg-white p-6 rounded-3xl border-b-8 border-primary/10 text-center">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Orders</p>
-                  <p className="text-4xl font-display text-primary">{orders.length}</p>
+               <div className="bg-white p-6 rounded-[32px] border-b-8 border-primary/20 shadow-sm">
+                  <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Total Orders</p>
+                  <p className="text-3xl font-display text-secondary">{stats.totalOrders}</p>
                </div>
-               <div className="bg-white p-6 rounded-3xl border-b-8 border-secondary/10 text-center">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Revenue</p>
-                  <p className="text-4xl font-display text-secondary">₹{orders.reduce((a,b) => a+b.total, 0)}</p>
+               <div className="bg-white p-6 rounded-[32px] border-b-8 border-secondary/20 shadow-sm">
+                  <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Total Revenue</p>
+                  <p className="text-3xl font-display text-primary leading-none">₹{stats.totalRevenue}</p>
+               </div>
+               <div className="bg-white p-6 rounded-[32px] border-b-8 border-bg-app shadow-sm">
+                  <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Today Orders</p>
+                  <p className="text-3xl font-display text-secondary">{stats.todayOrders}</p>
+               </div>
+               <div className="bg-white p-6 rounded-[32px] border-b-8 border-green-200 shadow-sm">
+                  <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Today Revenue</p>
+                  <p className="text-3xl font-display text-green-600 leading-none">₹{stats.todayRevenue}</p>
                </div>
             </div>
-            <div className="bg-white p-6 rounded-3xl space-y-4">
-               <h4 className="font-display text-xl text-secondary">Kitchen Health</h4>
-               <div className="space-y-3">
-                 <div className="flex justify-between items-center text-sm font-bold">
-                    <span className="text-slate-400">Customer Satisfaction</span>
-                    <span className="text-primary">98%</span>
-                 </div>
-                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <div className="bg-primary w-[98%] h-full rounded-full" />
-                 </div>
-                 <div className="flex justify-between items-center text-sm font-bold">
-                    <span className="text-slate-400">Avg Preparation Time</span>
-                    <span className="text-secondary">12 mins</span>
-                 </div>
-               </div>
+            
+            <div className="bg-white p-6 rounded-[32px] border border-slate-50 relative overflow-hidden group">
+               <div className="absolute top-0 left-0 w-1.5 h-full bg-primary/40" />
+               <h4 className="font-display text-xl text-secondary mb-4">Sales Insight</h4>
+               <p className="text-xs font-bold text-slate-400 leading-relaxed">
+                 You've processed {stats.todayOrders} orders today. Average value is ₹{Math.round(stats.todayRevenue / stats.todayOrders) || 0} per order.
+               </p>
             </div>
           </div>
         )}
