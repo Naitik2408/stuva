@@ -1488,21 +1488,23 @@ function AdminScreen() {
                          className="w-full bg-slate-50 rounded-2xl p-4 font-bold outline-none border-2 border-transparent focus:border-primary/20"
                        />
                        <div className="grid grid-cols-1 gap-3">
-                         <input 
-                           type="text" 
-                           inputMode="numeric"
-                           value={newItemPrice} 
-                           onChange={e => setNewItemPrice(e.target.value.replace(/\D/g, ''))}
-                           placeholder="Price (₹)"
-                           className="w-full bg-slate-50 rounded-2xl p-4 font-bold outline-none border-2 border-transparent focus:border-primary/20"
-                         />
+                         {(newItemCategory === 'others' || newItemCategory === 'thali') && (
+                           <input 
+                             type="text" 
+                             inputMode="numeric"
+                             value={newItemPrice} 
+                             onChange={e => setNewItemPrice(e.target.value.replace(/\D/g, ''))}
+                             placeholder="Price (₹)"
+                             className="w-full bg-slate-50 rounded-2xl p-4 font-bold outline-none border-2 border-transparent focus:border-primary/20"
+                           />
+                         )}
                          <select 
                            value={newItemCategory} onChange={e => setNewItemCategory(e.target.value as any)}
                            className="w-full bg-slate-50 rounded-2xl p-4 font-bold outline-none border-2 border-transparent focus:border-primary/20"
                          >
-                           <option value="dry_sabji">Dry Sabji</option>
-                           <option value="gravy_sabji">Gravy Sabji</option>
-                           <option value="others">Others (Paratha, etc)</option>
+                           <option value="dry_sabji">Dry Sabji (Included in Thali)</option>
+                           <option value="gravy_sabji">Gravy Sabji (Included in Thali)</option>
+                           <option value="others">Others (Paratha, Addons)</option>
                          </select>
                        </div>
                      </div>
@@ -1534,20 +1536,22 @@ function AdminScreen() {
                               onChange={e => updateItemName(item.id, e.target.value)}
                               className="font-display text-base text-secondary bg-transparent outline-none w-full"
                            />
-                           <div className="flex items-center gap-1.5 mt-1">
-                             <span className="text-[10px] font-bold text-slate-300">₹</span>
-                             <input 
-                               type="text" 
-                               inputMode="numeric"
-                               value={item.price === 0 ? '' : item.price} 
-                               onChange={e => {
-                                 const val = e.target.value.replace(/\D/g, '');
-                                 updatePrice(item.id, val === '' ? 0 : Number(val));
-                               }}
-                               placeholder="0"
-                               className="bg-transparent text-sm font-black text-primary outline-none w-16"
-                             />
-                           </div>
+                           {section.cat !== 'dry_sabji' && section.cat !== 'gravy_sabji' && (
+                             <div className="flex items-center gap-1.5 mt-1">
+                               <span className="text-[10px] font-bold text-slate-300">₹</span>
+                               <input 
+                                 type="text" 
+                                 inputMode="numeric"
+                                 value={item.price === 0 ? '' : item.price} 
+                                 onChange={e => {
+                                   const val = e.target.value.replace(/\D/g, '');
+                                   updatePrice(item.id, val === '' ? 0 : Number(val));
+                                 }}
+                                 placeholder="0"
+                                 className="bg-transparent text-sm font-black text-primary outline-none w-16"
+                               />
+                             </div>
+                           )}
                          </div>
                          <div className="flex items-center gap-3">
                            {section.cat !== 'thali' && (
