@@ -42,7 +42,7 @@ export default function OwnerPanel() {
   const [kitchenMenu, setKitchenMenu] = useState<any[]>([]);
   const [isMenuLoading, setIsMenuLoading] = useState(false);
   const [showAddMenuItem, setShowAddMenuItem] = useState(false);
-  const [newMenuItem, setNewMenuItem] = useState({ name: '', price: '', category: 'others' as any });
+  const [newMenuItem, setNewMenuItem] = useState({ name: '', price: '', category: 'others' as any, thali_type: 'both' as 'normal'|'special'|'both' });
 
   const OWNER_PHONE = '9060557296';
 
@@ -77,7 +77,8 @@ export default function OwnerPanel() {
         image_url: k.image_url,
         adminPhone: k.kitchen_admins[0]?.phone || 'No Admin',
         is_active: k.is_active,
-        adminCount: k.kitchen_admins.length
+        adminCount: k.kitchen_admins.length,
+        thali_type: k.thali_type || 'both'
       }));
       
       setKitchens(formatted as any);
@@ -190,6 +191,7 @@ export default function OwnerPanel() {
           name: newMenuItem.name,
           price: Number(newMenuItem.price) || 0,
           category: newMenuItem.category,
+          thali_type: newMenuItem.thali_type,
           available: true
         }])
         .select()
@@ -197,7 +199,7 @@ export default function OwnerPanel() {
       
       if (error) throw error;
       setKitchenMenu(prev => [...prev, data]);
-      setNewMenuItem({ name: '', price: '', category: 'others' });
+      setNewMenuItem({ name: '', price: '', category: 'others', thali_type: 'both' });
       setShowAddMenuItem(false);
     } catch (err) {
       console.error('Error adding menu item:', err);
@@ -602,6 +604,24 @@ export default function OwnerPanel() {
                               <option value="others">Others / Paratha</option>
                            </select>
                         </div>
+                        
+                        {(newMenuItem.category === 'dry_sabji' || newMenuItem.category === 'gravy_sabji') && (
+                          <div className="space-y-1.5">
+                             <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Visible In</label>
+                             <div className="flex gap-2">
+                               {['normal', 'special', 'both'].map(t => (
+                                 <button 
+                                   key={t}
+                                   onClick={() => setNewMenuItem({...newMenuItem, thali_type: t as any})}
+                                   className={`flex-1 py-3 rounded-xl font-bold text-[10px] tracking-widest uppercase transition-all border ${newMenuItem.thali_type === t ? 'bg-primary text-white border-primary shadow-lg shadow-primary/10' : 'bg-white border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+                                 >
+                                   {t}
+                                 </button>
+                               ))}
+                             </div>
+                          </div>
+                        )}
+
                         <div className="flex gap-4">
                            {(newMenuItem.category === 'others' || newMenuItem.category === 'thali') && (
                              <input 
@@ -641,7 +661,12 @@ export default function OwnerPanel() {
                                   {item.name[0]}
                                 </div>
                                 <div>
-                                  <p className="font-bold text-secondary">{item.name}</p>
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-bold text-secondary">{item.name}</p>
+                                    {(item.category === 'dry_sabji' || item.category === 'gravy_sabji') && (
+                                      <span className="text-[8px] font-black uppercase bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded leading-none">{item.thali_type}</span>
+                                    )}
+                                  </div>
                                   <p className="text-sm font-display text-primary">₹{item.price}</p>
                                 </div>
                               </div>

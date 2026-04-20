@@ -48,10 +48,12 @@ interface Kitchen {
 
 interface MenuItem {
   id: string;
+  kitchen_id?: string;
   name: string;
   price: number;
   available: boolean;
   category: 'thali' | 'dry_sabji' | 'gravy_sabji' | 'others';
+  thali_type?: 'normal' | 'special' | 'both';
 }
 
 interface CartItem {
@@ -1028,9 +1030,10 @@ function MenuScreen({
         setLocalMenu(data.map(m => ({
           id: m.id,
           name: m.name,
-          price: m.price,
+          price: Number(m.price),
           available: m.available,
-          category: m.category
+          category: m.category,
+          thali_type: m.thali_type
         })));
       }
     } catch (err) {
@@ -1115,18 +1118,18 @@ function MenuScreen({
           <div className="space-y-4">
             <ThaliCard 
               type="Normal"
-              price={localMenu.find(i => i.name === 'Normal Thali')?.price || 80} 
+              price={localMenu.find(i => i.name.toLowerCase().trim() === 'normal thali')?.price || 70} 
               description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice"
-              dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available).map(i => i.name) || []}
-              gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available).map(i => i.name) || []}
+              dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available && (i.thali_type === 'normal' || i.thali_type === 'both')).map(i => i.name) || []}
+              gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available && (i.thali_type === 'normal' || i.thali_type === 'both')).map(i => i.name) || []}
               onAdd={(item) => onAddToCart(item)}
             />
             <ThaliCard 
               type="Special"
-              price={localMenu.find(i => i.name === 'Special Thali')?.price || 120} 
+              price={localMenu.find(i => i.name.toLowerCase().trim() === 'special thali')?.price || 80} 
               description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice, Extra Item"
-              dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available).map(i => i.name) || []}
-              gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available).map(i => i.name) || []}
+              dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available && (i.thali_type === 'special' || i.thali_type === 'both')).map(i => i.name) || []}
+              gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available && (i.thali_type === 'special' || i.thali_type === 'both')).map(i => i.name) || []}
               onAdd={(item) => onAddToCart(item)}
             />
           </div>
@@ -1199,14 +1202,13 @@ function ThaliCard({
   const [withRice, setWithRice] = useState(true);
   const [drySabji, setDrySabji] = useState(dryOptions[0] || 'Aloo Gobi');
   const [gravySabji, setGravySabji] = useState(gravyOptions[0] || 'Paneer');
-  const [extraRoti, setExtraRoti] = useState(0);
 
   useEffect(() => {
     if (dryOptions.length > 0 && !dryOptions.includes(drySabji)) setDrySabji(dryOptions[0]);
     if (gravyOptions.length > 0 && !gravyOptions.includes(gravySabji)) setGravySabji(gravyOptions[0]);
   }, [dryOptions, gravyOptions]);
 
-  const totalPrice = price + (extraRoti * 7);
+  const totalPrice = price;
   const rotiCount = withRice ? 3 : 5;
 
   return (
@@ -1218,7 +1220,7 @@ function ThaliCard({
           <div className="flex items-center gap-2">
             <span className="font-display text-primary text-xl">₹{totalPrice}</span>
             <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
-              {rotiCount + extraRoti} Roti {withRice && "+ Rice"}
+              {rotiCount} Roti {withRice && "+ Rice"}
             </span>
           </div>
         </div>
@@ -1279,30 +1281,13 @@ function ThaliCard({
            </div>
         </div>
 
-        {/* Extra Roti */}
-        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100 font-bold">
-           <div className="flex flex-col">
-             <span className="text-[11px] text-slate-800">Extra Roti</span>
-             <span className="text-[9px] text-slate-400 uppercase tracking-tighter">₹7 per piece</span>
-           </div>
-           <div className="flex items-center gap-4 bg-white px-3 py-1.5 rounded-xl text-ink">
-             <button onClick={() => setExtraRoti(Math.max(0, extraRoti - 1))} className="text-slate-300 active:text-primary transition-colors cursor-pointer">
-               <Minus className="w-4 h-4" />
-             </button>
-             <span className="font-display text-lg w-4 text-center">{extraRoti}</span>
-             <button onClick={() => setExtraRoti(extraRoti + 1)} className="text-primary active:scale-110 transition-all cursor-pointer">
-               <Plus className="w-4 h-4" />
-             </button>
-           </div>
-        </div>
-
         <button 
           onClick={() => onAdd({ 
             id: `${type.toLowerCase()}-thali-${Date.now()}`, 
             name: `${type} Thali`, 
             price: totalPrice, 
             quantity: 1, 
-            options: { withRice, drySabji, gravySabji, extraRoti } 
+            options: { withRice, drySabji, gravySabji } 
           })}
           className="w-full funky-btn-secondary py-4"
         >
@@ -1408,12 +1393,15 @@ function AdminScreen() {
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
   const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'history' | 'stats'>('orders');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(KITCHENS[0].menu || []);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [currentKitchenId, setCurrentKitchenId] = useState<string | null>(null);
   const [showAdminMenu, setShowAdminMenu] = useState(false);
   const [showAddItemForm, setShowAddItemForm] = useState(false);
+  const [isMenuLoading, setIsMenuLoading] = useState(false);
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemCategory, setNewItemCategory] = useState<MenuItem['category']>('dry_sabji');
+  const [newItemThaliType, setNewItemThaliType] = useState<'normal' | 'special' | 'both'>('both');
 
   const otpRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
 
@@ -1438,35 +1426,128 @@ function AdminScreen() {
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
   };
 
-  const toggleMenuItem = (id: string) => {
-    setMenuItems(prev => prev.map(item => item.id === id ? { ...item, available: !item.available } : item));
+  useEffect(() => {
+    if (adminStep === 'DASHBOARD') {
+      fetchAdminContext();
+    }
+  }, [adminStep]);
+
+  const fetchAdminContext = async () => {
+    try {
+      // 1. Get kitchen ID for this phone
+      const { data: adminData } = await supabase
+        .from('kitchen_admins')
+        .select('kitchen_id')
+        .eq('phone', adminPhone)
+        .single();
+      
+      if (adminData) {
+        setCurrentKitchenId(adminData.kitchen_id);
+        fetchAdminMenuItems(adminData.kitchen_id);
+      }
+    } catch (err) {
+      console.error('Error fetching admin context:', err);
+    }
   };
 
-  const updatePrice = (id: string, newPrice: number) => {
-    setMenuItems(prev => prev.map(item => item.id === id ? { ...item, price: newPrice } : item));
+  const fetchAdminMenuItems = async (kitchenId: string) => {
+    setIsMenuLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('menu_items')
+        .select('*')
+        .eq('kitchen_id', kitchenId);
+      if (error) throw error;
+      setMenuItems(data.map(m => ({
+        id: m.id,
+        kitchen_id: m.kitchen_id,
+        name: m.name,
+        price: Number(m.price),
+        available: m.available,
+        category: m.category,
+        thali_type: m.thali_type
+      })));
+    } catch (err) {
+      console.error('Error fetching menu:', err);
+    } finally {
+      setIsMenuLoading(false);
+    }
   };
 
-  const updateItemName = (id: string, newName: string) => {
-    setMenuItems(prev => prev.map(item => item.id === id ? { ...item, name: newName } : item));
+  const toggleMenuItem = async (id: string) => {
+    const item = menuItems.find(i => i.id === id);
+    if (!item) return;
+    try {
+      const { error } = await supabase.from('menu_items').update({ available: !item.available }).eq('id', id);
+      if (error) throw error;
+      setMenuItems(prev => prev.map(item => item.id === id ? { ...item, available: !item.available } : item));
+    } catch (err) {
+      console.error('Error toggling menu item:', err);
+    }
   };
 
-  const addNewItem = () => {
-    if (!newItemName) return;
-    const newItem: MenuItem = {
-      id: `item-${Date.now()}`,
-      name: newItemName,
-      price: Number(newItemPrice) || 0,
-      available: true,
-      category: newItemCategory
-    };
-    setMenuItems(prev => [...prev, newItem]);
-    setNewItemName('');
-    setNewItemPrice('');
-    setShowAddItemForm(false);
+  const updatePrice = async (id: string, newPrice: number) => {
+    try {
+      const { error } = await supabase.from('menu_items').update({ price: newPrice }).eq('id', id);
+      if (error) throw error;
+      setMenuItems(prev => prev.map(item => item.id === id ? { ...item, price: newPrice } : item));
+    } catch (err) {
+      console.error('Error updating price:', err);
+    }
   };
 
-  const deleteItem = (id: string) => {
-    setMenuItems(prev => prev.filter(item => item.id !== id));
+  const updateItemName = async (id: string, newName: string) => {
+    try {
+      const { error } = await supabase.from('menu_items').update({ name: newName }).eq('id', id);
+      if (error) throw error;
+      setMenuItems(prev => prev.map(item => item.id === id ? { ...item, name: newName } : item));
+    } catch (err) {
+      console.error('Error updating name:', err);
+    }
+  };
+
+  const addNewItem = async () => {
+    if (!newItemName || !currentKitchenId) return;
+    try {
+      const { data, error } = await supabase
+        .from('menu_items')
+        .insert([{
+          kitchen_id: currentKitchenId,
+          name: newItemName,
+          price: Number(newItemPrice) || 0,
+          category: newItemCategory,
+          thali_type: newItemThaliType,
+          available: true
+        }])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      setMenuItems(prev => [...prev, {
+        id: data.id,
+        name: data.name,
+        price: data.price,
+        available: data.available,
+        category: data.category,
+        thali_type: data.thali_type
+      }]);
+      setNewItemName('');
+      setNewItemPrice('');
+      setShowAddItemForm(false);
+    } catch (err) {
+      console.error('Error adding new item:', err);
+    }
+  };
+
+  const deleteItem = async (id: string) => {
+    if (!confirm('Are you sure?')) return;
+    try {
+      const { error } = await supabase.from('menu_items').delete().eq('id', id);
+      if (error) throw error;
+      setMenuItems(prev => prev.filter(item => item.id !== id));
+    } catch (err) {
+      console.error('Error deleting item:', err);
+    }
   };
 
   const twoDaysAgo = Date.now() - (2 * 24 * 60 * 60 * 1000);
@@ -1904,6 +1985,24 @@ function AdminScreen() {
                            <option value="gravy_sabji">Gravy Sabji (Included in Thali)</option>
                            <option value="others">Others (Paratha, Addons)</option>
                          </select>
+                         
+                         {(newItemCategory === 'dry_sabji' || newItemCategory === 'gravy_sabji') && (
+                           <div className="space-y-2">
+                             <p className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Visible In</p>
+                             <div className="flex gap-2">
+                               {['normal', 'special', 'both'].map(t => (
+                                 <button 
+                                   key={t}
+                                   onClick={() => setNewItemThaliType(t as any)}
+                                   type="button"
+                                   className={`flex-1 py-3 rounded-xl font-bold text-[10px] tracking-widest uppercase transition-all border ${newItemThaliType === t ? 'bg-primary text-white border-primary shadow-lg shadow-primary/10' : 'bg-white border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+                                 >
+                                   {t}
+                                 </button>
+                               ))}
+                             </div>
+                           </div>
+                         )}
                        </div>
                      </div>
                      <button onClick={addNewItem} className="w-full funky-btn-primary h-16 text-lg">Save Item</button>
@@ -1925,51 +2024,60 @@ function AdminScreen() {
                    <div className="flex-1 h-px bg-slate-100" />
                  </div>
                  <div className="space-y-3">
-                   {menuItems.filter(i => i.category === section.cat).map(item => (
-                     <div key={item.id} className="bg-white p-5 rounded-[28px] shadow-sm border border-slate-50 flex flex-col gap-4">
-                       <div className="flex items-center justify-between">
-                         <div className="flex-1 mr-4">
-                           <input 
-                              type="text" value={item.name} 
-                              onChange={e => updateItemName(item.id, e.target.value)}
-                              className="font-display text-base text-secondary bg-transparent outline-none w-full"
-                           />
-                           {section.cat !== 'dry_sabji' && section.cat !== 'gravy_sabji' && (
-                             <div className="flex items-center gap-1.5 mt-1">
-                               <span className="text-[10px] font-bold text-slate-300">₹</span>
+                   {isMenuLoading ? (
+                     <div className="py-20 text-center opacity-40 font-display">Loading menu magic...</div>
+                   ) : (
+                     menuItems.filter(i => i.category === section.cat).map(item => (
+                       <div key={item.id} className="bg-white p-5 rounded-[28px] shadow-sm border border-slate-50 flex flex-col gap-4">
+                         <div className="flex items-center justify-between">
+                           <div className="flex-1 mr-4">
+                             <div className="flex items-center gap-2">
                                <input 
-                                 type="text" 
-                                 inputMode="numeric"
-                                 value={item.price === 0 ? '' : item.price} 
-                                 onChange={e => {
-                                   const val = e.target.value.replace(/\D/g, '');
-                                   updatePrice(item.id, val === '' ? 0 : Number(val));
-                                 }}
-                                 placeholder="0"
-                                 className="bg-transparent text-sm font-black text-primary outline-none w-16"
+                                  type="text" value={item.name} 
+                                  onChange={e => updateItemName(item.id, e.target.value)}
+                                  className="font-display text-base text-secondary bg-transparent outline-none flex-1"
                                />
+                               {(item.category === 'dry_sabji' || item.category === 'gravy_sabji') && (
+                                 <span className="text-[8px] font-black uppercase bg-slate-50 text-slate-300 px-1.5 py-0.5 rounded leading-none shrink-0">{item.thali_type}</span>
+                               )}
                              </div>
-                           )}
-                         </div>
-                         <div className="flex items-center gap-3">
-                           {section.cat !== 'thali' && (
+                             {section.cat !== 'dry_sabji' && section.cat !== 'gravy_sabji' && (
+                               <div className="flex items-center gap-1.5 mt-1">
+                                 <span className="text-[10px] font-bold text-slate-300">₹</span>
+                                 <input 
+                                   type="text" 
+                                   inputMode="numeric"
+                                   value={item.price === 0 ? '' : item.price} 
+                                   onChange={e => {
+                                     const val = e.target.value.replace(/\D/g, '');
+                                     updatePrice(item.id, val === '' ? 0 : Number(val));
+                                   }}
+                                   placeholder="0"
+                                   className="bg-transparent text-sm font-black text-primary outline-none w-16"
+                                 />
+                               </div>
+                             )}
+                           </div>
+                           <div className="flex items-center gap-3">
+                             {section.cat !== 'thali' && (
+                               <button 
+                                 onClick={() => deleteItem(item.id)}
+                                 className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-50 text-red-400 active:scale-90 transition-transform"
+                               >
+                                  <Plus className="w-4 h-4 rotate-45" />
+                               </button>
+                             )}
                              <button 
-                               onClick={() => deleteItem(item.id)}
-                               className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-50 text-red-400 active:scale-90 transition-transform"
+                               onClick={() => toggleMenuItem(item.id)}
+                               className={`w-12 h-6 rounded-full transition-all relative ${item.available ? 'bg-primary' : 'bg-slate-200'}`}
                              >
-                                <Plus className="w-4 h-4 rotate-45" />
+                               <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${item.available ? 'left-7' : 'left-1'}`} />
                              </button>
-                           )}
-                           <button 
-                             onClick={() => toggleMenuItem(item.id)}
-                             className={`w-12 h-6 rounded-full transition-all relative ${item.available ? 'bg-primary' : 'bg-slate-200'}`}
-                           >
-                             <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${item.available ? 'left-7' : 'left-1'}`} />
-                           </button>
+                           </div>
                          </div>
                        </div>
-                     </div>
-                   ))}
+                     ))
+                   )}
                  </div>
                </section>
              ))}
