@@ -69,6 +69,12 @@ interface Order {
   status: 'pending' | 'preparing' | 'on-the-way' | 'delivered';
   time: string;
   timestamp: number; // Added for history filtering
+  address?: UserAddress;
+}
+
+interface UserAddress {
+  building: string;
+  area: string;
 }
 
 // Mock Data
@@ -205,7 +211,9 @@ function AppContent() {
   const location = useLocation();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCheckout, setShowCheckout] = useState(false);
-  const [checkoutStep, setCheckoutStep] = useState<'AUTH' | 'OTP'>('AUTH');
+  const [checkoutStep, setCheckoutStep] = useState<'AUTH' | 'OTP' | 'ADDRESS' | 'SUMMARY'>('AUTH');
+  const [userAddress, setUserAddress] = useState<UserAddress | null>(null);
+  const [tempAddress, setTempAddress] = useState<UserAddress>({ building: '', area: 'Law Gate' });
   const [orderSummary, setOrderSummary] = useState<CartItem[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
@@ -233,9 +241,8 @@ function AppContent() {
 
   const handleCheckoutClick = () => {
     if (isLoggedIn) {
-      setOrderSummary([...cart]);
-      setCart([]);
-      navigate('/success');
+      setCheckoutStep('SUMMARY');
+      setShowCheckout(true);
     } else {
       setCheckoutStep('AUTH');
       setShowCheckout(true);
@@ -249,6 +256,27 @@ function AppContent() {
   const confirmLoginAndOrder = () => {
     setIsLoggedIn(true);
     setIsReturningUser(true);
+    if (!userAddress) {
+      setCheckoutStep('ADDRESS');
+    } else {
+      setCheckoutStep('SUMMARY');
+    }
+  };
+
+  const saveAddressAndContinue = () => {
+    if (!tempAddress.building) return;
+    setUserAddress(tempAddress);
+    setCheckoutStep('SUMMARY');
+  };
+
+  const editAddress = () => {
+    if (userAddress) {
+      setTempAddress(userAddress);
+    }
+    setCheckoutStep('ADDRESS');
+  };
+
+  const finalPlaceOrder = () => {
     setOrderSummary([...cart]);
     setCart([]);
     setShowCheckout(false);
@@ -381,60 +409,160 @@ function AppContent() {
                       )}
                     </div>
 
-                      <button 
-                        onClick={proceedToOtp}
-                        className="w-full funky-btn-primary h-14 flex items-center justify-center gap-2"
-                      >
-                        Send OTP
-                        <ArrowRight className="w-5 h-5" />
-                      </button>
-                    </motion.div>
-                  ) : (
-                    <motion.div 
-                      key="otp-step"
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className="space-y-6"
+                    <button 
+                      onClick={proceedToOtp}
+                      className="w-full funky-btn-primary h-14 flex items-center justify-center gap-2"
                     >
-                      <div>
-                        <h2 className="text-2xl font-display text-secondary">Verification Tag</h2>
-                        <p className="text-slate-400 font-bold text-sm">We sent a 4-digit code to your phone</p>
+                      Send OTP
+                      <ArrowRight className="w-5 h-5" />
+                    </button>
+                  </motion.div>
+                ) : checkoutStep === 'OTP' ? (
+                  <motion.div 
+                    key="otp-step"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="space-y-6"
+                  >
+                    <div>
+                      <h2 className="text-2xl font-display text-secondary">Verification</h2>
+                      <p className="text-slate-400 font-bold text-sm">We sent a 4-digit code to your phone</p>
+                    </div>
+
+                    <div className="flex gap-3 justify-center py-4">
+                      {otp.map((digit, i) => (
+                          <input 
+                            key={i}
+                            id={`otp-${i}`}
+                            type="tel"
+                            inputMode="numeric"
+                            maxLength={1}
+                            value={digit}
+                            onChange={(e) => handleOtpChange(e.target.value, i)}
+                            onKeyDown={(e) => handleOtpKeyDown(e, i)}
+                            className="w-14 h-16 bg-slate-50 border-2 border-slate-100 rounded-2xl text-center font-display text-2xl text-primary focus:border-primary focus:bg-white outline-none transition-all"
+                            placeholder="-"
+                          />
+                      ))}
+                    </div>
+
+                    <div className="text-center">
+                      <button className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">
+                        Resend Code in 00:29
+                      </button>
+                    </div>
+
+                    <button 
+                      onClick={confirmLoginAndOrder}
+                      className="w-full funky-btn-secondary h-14 flex items-center justify-center gap-2"
+                    >
+                      Verify PIN
+                      <ShoppingBag className="w-5 h-5" />
+                    </button>
+                  </motion.div>
+                ) : checkoutStep === 'ADDRESS' ? (
+                  <motion.div 
+                    key="address-step"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="space-y-6"
+                  >
+                    <div>
+                      <h2 className="text-2xl font-display text-secondary">Delivery Address</h2>
+                      <p className="text-slate-400 font-bold text-sm">Where should we bring your food?</p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Building / Hostel Name & Landmark</label>
+                        <input 
+                          autoFocus
+                          type="text" 
+                          value={tempAddress.building}
+                          onChange={(e) => setTempAddress({ ...tempAddress, building: e.target.value })}
+                          placeholder="e.g. Fragnance appartment, near red apple tower" 
+                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none"
+                        />
                       </div>
 
-                      <div className="flex gap-3 justify-center py-4">
-                        {otp.map((digit, i) => (
-                            <input 
-                              key={i}
-                              id={`otp-${i}`}
-                              type="tel"
-                              inputMode="numeric"
-                              maxLength={1}
-                              value={digit}
-                              onChange={(e) => handleOtpChange(e.target.value, i)}
-                              onKeyDown={(e) => handleOtpKeyDown(e, i)}
-                              className="w-14 h-16 bg-slate-50 border-2 border-slate-100 rounded-2xl text-center font-display text-2xl text-primary focus:border-primary focus:bg-white outline-none transition-all"
-                              placeholder="-"
-                            />
-                        ))}
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Select Area</label>
+                        <div className="flex flex-wrap gap-2">
+                          {['Law Gate', 'Green Valley', 'Bhutani Colony', 'Other'].map(area => (
+                            <button 
+                              key={area}
+                              onClick={() => setTempAddress({ ...tempAddress, area })}
+                              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border-2 ${tempAddress.area === area ? 'bg-secondary text-white border-secondary shadow-md' : 'bg-white text-slate-400 border-slate-50 hover:bg-slate-50'}`}
+                            >
+                              {area}
+                            </button>
+                          ))}
+                        </div>
                       </div>
+                    </div>
 
-                      <div className="text-center">
-                        <button className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">
-                          Resend Code in 00:29
+                    <button 
+                      onClick={saveAddressAndContinue}
+                      disabled={!tempAddress.building}
+                      className="w-full funky-btn-primary h-14 disabled:opacity-50 disabled:grayscale"
+                    >
+                      Save & Continue
+                    </button>
+                  </motion.div>
+                ) : (
+                  <motion.div 
+                    key="summary-step"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="space-y-6"
+                  >
+                    <div>
+                      <h2 className="text-2xl font-display text-secondary">Checkout</h2>
+                      <p className="text-slate-400 font-bold text-sm">Review your order details</p>
+                    </div>
+
+                    <div className="bg-primary/5 rounded-[32px] p-6 border-2 border-primary/20 space-y-4">
+                      <div className="flex items-start gap-4">
+                        <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center text-primary shadow-sm">
+                          <MapPin className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest mb-1">Deliver to</p>
+                          <p className="text-sm font-bold text-secondary leading-tight">{userAddress?.building}</p>
+                          <p className="text-[12px] font-bold text-slate-400 mt-0.5">{userAddress?.area}</p>
+                        </div>
+                        <button 
+                          onClick={editAddress}
+                          className="px-3 py-1.5 bg-white text-[10px] font-black text-primary rounded-xl shadow-sm active:scale-95 transition-transform"
+                        >
+                          EDIT
                         </button>
                       </div>
 
-                      <button 
-                        onClick={confirmLoginAndOrder}
-                        className="w-full funky-btn-secondary h-14 flex items-center justify-center gap-2"
-                      >
-                        Confirm & Order
-                        <ShoppingBag className="w-5 h-5" />
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                      <div className="pt-4 border-t-2 border-dashed border-primary/10 flex justify-between items-center">
+                        <div>
+                          <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest mb-1">Pay on Delivery</p>
+                          <p className="text-lg font-display text-secondary">{cart.length} Items</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-display text-primary">₹{cartTotal}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={finalPlaceOrder}
+                      className="w-full funky-btn-secondary h-16 text-lg flex items-center justify-center gap-2 group"
+                    >
+                      Place Order
+                      <ShoppingBag className="w-6 h-6 animate-bounce" />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
                 <div className="h-4" />
               </motion.div>
             </>
