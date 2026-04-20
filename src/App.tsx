@@ -66,13 +66,14 @@ interface CartItem {
 
 interface Order {
   id: string;
+  kitchen_id: string;
   customerName: string;
   customerPhone: string;
   items: CartItem[];
   total: number;
   status: 'pending' | 'preparing' | 'on-the-way' | 'delivered';
   time: string;
-  timestamp: number; // Added for history filtering
+  timestamp: number; 
   address?: UserAddress;
 }
 
@@ -149,6 +150,7 @@ const KITCHENS: Kitchen[] = [
 const INITIAL_ORDERS: Order[] = [
   {
     id: '0001',
+    kitchen_id: '1',
     customerName: 'Aman Deep',
     customerPhone: '+91 98888 77777',
     total: 167,
@@ -162,6 +164,7 @@ const INITIAL_ORDERS: Order[] = [
   },
   {
     id: '0002',
+    kitchen_id: '1',
     customerName: 'Rahul Sharma',
     customerPhone: '+91 70000 11111',
     total: 120,
@@ -174,22 +177,24 @@ const INITIAL_ORDERS: Order[] = [
   },
   {
     id: '0000',
+    kitchen_id: '1',
     customerName: 'History Test',
     customerPhone: '+91 00000 00000',
     total: 150,
     status: 'delivered',
     time: 'Yesterday',
-    timestamp: Date.now() - (36 * 60 * 60 * 1000), // 36 hours ago (within 2 days)
+    timestamp: Date.now() - (36 * 60 * 60 * 1000), 
     items: [{ id: 't1', name: 'Normal Thali', price: 80, quantity: 2 }]
   },
   {
     id: 'X001',
+    kitchen_id: '1',
     customerName: 'Old Order',
     customerPhone: '+91 00000 00000',
     total: 200,
     status: 'delivered',
     time: '3 Days Ago',
-    timestamp: Date.now() - (4 * 24 * 60 * 60 * 1000), // 4 days ago (should be hidden in history)
+    timestamp: Date.now() - (4 * 24 * 60 * 60 * 1000), 
     items: [{ id: 't1', name: 'Special Thali', price: 100, quantity: 2 }]
   }
 ];
@@ -228,6 +233,7 @@ function AppContent() {
   const [userAddress, setUserAddress] = useState<UserAddress | null>(null);
   const [tempAddress, setTempAddress] = useState<UserAddress>({ building: '', area: 'Law Gate' });
   const [orderSummary, setOrderSummary] = useState<CartItem[]>([]);
+  const [activeKitchenId, setActiveKitchenId] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '']);
@@ -245,10 +251,12 @@ function AppContent() {
 
   const fetchKitchens = async () => {
     try {
+      const now = new Date().toISOString();
       const { data, error } = await supabase
         .from('kitchens')
         .select('*')
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .gt('subscription_expires_at', now);
       
       if (error) throw error;
       if (data) {
@@ -330,8 +338,10 @@ function AppContent() {
     }
   };
 
-  const handleCheckoutClick = () => {
+  const handleCheckoutClick = (kitchenId?: string) => {
     setAuthError('');
+    if (kitchenId) setActiveKitchenId(kitchenId);
+    
     if (isLoggedIn) {
       setCheckoutStep('SUMMARY');
       setShowCheckout(true);
@@ -476,11 +486,34 @@ function AppContent() {
     setCheckoutStep('ADDRESS');
   };
 
-  const finalPlaceOrder = () => {
-    setOrderSummary([...cart]);
-    setCart([]);
-    setShowCheckout(false);
-    navigate('/success');
+  const finalPlaceOrder = async () => {
+    if (!activeKitchenId || !currentUser) return;
+    
+    setIsProcessing(true);
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .insert([{
+          kitchen_id: activeKitchenId,
+          customer_name: currentUser.name,
+          customer_phone: currentUser.phone,
+          total: cartTotal,
+          items: cart,
+          status: 'pending',
+          address: userAddress
+        }]);
+
+      if (error) throw error;
+
+      setOrderSummary([...cart]);
+      setCart([]);
+      setShowCheckout(false);
+      navigate('/success');
+    } catch (err) {
+      setAuthError('Failed to place order.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const addToCart = (item: CartItem) => {
@@ -541,7 +574,7 @@ function AppContent() {
                       onAddToCart={addToCart}
                       cart={cart}
                       updateQuantity={updateQuantity}
-                      onCheckout={handleCheckoutClick}
+                      onCheckout={(kitchenId) => handleCheckoutClick(kitchenId)}
                       isLoggedIn={isLoggedIn}
                     />
                   } 
@@ -1000,7 +1033,7 @@ function MenuScreen({
   onAddToCart: (item: CartItem) => void;
   cart: CartItem[];
   updateQuantity: (id: string, delta: number) => void;
-  onCheckout: () => void;
+  onCheckout: (kitchenId: string) => void;
   isLoggedIn: boolean;
 }) {
   const { slug } = useParams();

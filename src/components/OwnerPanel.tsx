@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   User,
   ShoppingBag,
+  CreditCard,
   Menu as MenuIcon
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -26,6 +27,7 @@ interface Kitchen {
   adminPhone: string;
   is_active: boolean;
   adminCount?: number;
+  subscription_expires_at?: string;
 }
 
 export default function OwnerPanel() {
@@ -33,11 +35,20 @@ export default function OwnerPanel() {
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState(['', '', '', '']);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'KITCHENS' | 'ADMINS' | 'STATS'>('KITCHENS');
+  const [activeTab, setActiveTab] = useState<'KITCHENS' | 'ADMINS' | 'STATS' | 'SUBSCRIPTIONS'>('KITCHENS');
   const [kitchens, setKitchens] = useState<Kitchen[]>([]);
   const [showAddKitchen, setShowAddKitchen] = useState(false);
   const [newKitchen, setNewKitchen] = useState({ name: '', slug: '', adminPhone: '', description: '', image_url: '' });
   const [isLoading, setIsLoading] = useState(false);
+  const [admins, setAdmins] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    totalOrders: 0,
+    totalRevenue: 0,
+    todayOrders: 0,
+    todayRevenue: 0
+  });
+  const [showAddAdmin, setShowAddAdmin] = useState(false);
+  const [newAdmin, setNewAdmin] = useState({ phone: '', kitchen_id: '' });
   const [selectedKitchenForMenu, setSelectedKitchenForMenu] = useState<Kitchen | null>(null);
   const [kitchenMenu, setKitchenMenu] = useState<any[]>([]);
   const [isMenuLoading, setIsMenuLoading] = useState(false);
@@ -53,9 +64,133 @@ export default function OwnerPanel() {
     const saved = localStorage.getItem('stuva_owner_auth');
     if (saved === OWNER_PHONE) {
       setAuthStep('DASHBOARD');
-      fetchKitchens();
     }
   }, []);
+
+  useEffect(() => {
+    if (authStep === 'DASHBOARD') {
+      if (activeTab === 'KITCHENS' || activeTab === 'SUBSCRIPTIONS') fetchKitchens();
+      if (activeTab === 'ADMINS') fetchAdmins();
+      if (activeTab === 'STATS') fetchStats();
+    }
+  }, [activeTab, authStep]);
+
+  const fetchAdmins = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('kitchen_admins')
+        .select('*, kitchens(name)');
+      if (error) throw error;
+      setAdmins(data || []);
+    } catch (err) {
+      console.error('Error fetching admins:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*');
+      if (error) throw error;
+      
+      const orders = data || [];
+      const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+      
+      const totalRevenue = orders.reduce((acc, o) => acc + Number(o.total || 0), 0);
+      const todayOrdersArr = orders.filter(o => o.created_at.startsWith(today));
+      const todayRevenue = todayOrdersArr.reduce((acc, o) => acc + Number(o.total || 0), 0);
+      
+      setStats({
+        totalOrders: orders.length,
+        totalRevenue: Math.round(totalRevenue),
+        todayOrders: todayOrdersArr.length,
+        todayRevenue: Math.round(todayRevenue)
+      });
+    } catch (err) {
+      console.error('Error fetching stats:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAddAdmin = async () => {
+    if (!newAdmin.phone || !newAdmin.kitchen_id) return;
+    try {
+      const { error } = await supabase
+        .from('kitchen_admins')
+        .insert([{ phone: newAdmin.phone, kitchen_id: newAdmin.kitchen_id }]);
+      if (error) throw error;
+      setShowAddAdmin(false);
+      setNewAdmin({ phone: '', kitchen_id: '' });
+      fetchAdmins();
+    } catch (err) {
+      console.error('Error adding admin:', err);
+    }
+  };
+
+  const deleteAdmin = async (phone: string, kitchen_id: string) => {
+    if (!confirm('Are you sure?')) return;
+    try {
+      const { error } = await supabase
+        .from('kitchen_admins')
+        .delete()
+        .eq('phone', phone)
+        .eq('kitchen_id', kitchen_id);
+      if (error) throw error;
+      fetchAdmins();
+    } catch (err) {
+      console.error('Error deleting admin:', err);
+    }
+  };
+
+  const toggleKitchenStatus = async (id: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('kitchens')
+        .update({ is_active: !currentStatus })
+        .eq('id', id);
+      
+      if (error) throw error;
+      fetchKitchens();
+    } catch (err) {
+      console.error('Error toggling kitchen status:', err);
+    }
+  };
+
+  const extendSubscription = async (id: string, months: number, currentExpiry?: string) => {
+    try {
+      const now = new Date();
+      let baseDate = now;
+      
+      if (currentExpiry) {
+        const expiryDate = new Date(currentExpiry);
+        if (expiryDate > now) {
+          baseDate = expiryDate;
+        }
+      }
+
+      const newExpiry = new Date(baseDate);
+      newExpiry.setMonth(newExpiry.getMonth() + months);
+
+      const { error } = await supabase
+        .from('kitchens')
+        .update({ 
+          subscription_expires_at: newExpiry.toISOString(),
+          is_active: true 
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+      fetchKitchens();
+    } catch (err) {
+      console.error('Error extending subscription:', err);
+    }
+  };
 
   const fetchKitchens = async () => {
     setIsLoading(true);
@@ -78,7 +213,8 @@ export default function OwnerPanel() {
         adminPhone: k.kitchen_admins[0]?.phone || 'No Admin',
         is_active: k.is_active,
         adminCount: k.kitchen_admins.length,
-        thali_type: k.thali_type || 'both'
+        thali_type: k.thali_type || 'both',
+        subscription_expires_at: k.subscription_expires_at
       }));
       
       setKitchens(formatted as any);
@@ -324,6 +460,7 @@ export default function OwnerPanel() {
           {[
             { id: 'KITCHENS', label: 'Kitchens', icon: Store },
             { id: 'ADMINS', label: 'Admins', icon: Users },
+            { id: 'SUBSCRIPTIONS', label: 'Subscriptions', icon: CreditCard },
             { id: 'STATS', label: 'Analytics', icon: LayoutDashboard },
           ].map(item => (
             <button 
@@ -409,10 +546,13 @@ export default function OwnerPanel() {
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center justify-between">
                             <h4 className="text-xl font-display text-secondary">{k.name}</h4>
-                            <div className="flex items-center gap-2 px-3 py-1 bg-green-50 rounded-full">
-                              <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                              <span className="text-[10px] font-black text-green-600 uppercase tracking-widest">Active</span>
-                            </div>
+                            <button 
+                              onClick={() => toggleKitchenStatus(k.id, k.is_active)}
+                              className={`flex items-center gap-2 px-3 py-1 rounded-full transition-all ${k.is_active ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}
+                            >
+                              <div className={`w-1.5 h-1.5 rounded-full ${k.is_active ? 'bg-green-500' : 'bg-red-500'}`} />
+                              <span className="text-[10px] font-black uppercase tracking-widest">{k.is_active ? 'Active' : 'Deactivated'}</span>
+                            </button>
                           </div>
                           <p className="text-xs font-bold text-slate-400">/{k.slug}</p>
                           <p className="text-[11px] text-slate-400 line-clamp-1 italic">{k.description}</p>
@@ -443,11 +583,212 @@ export default function OwnerPanel() {
                   ))}
                 </div>
               </motion.div>
+            ) : activeTab === 'ADMINS' ? (
+              <motion.div 
+                key="admins" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                className="space-y-8"
+              >
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-2xl font-display text-secondary">Admin Directory</h3>
+                    <p className="text-sm font-bold text-slate-400">Manage kitchen staff and access levels</p>
+                  </div>
+                  <button 
+                    onClick={() => setShowAddAdmin(true)}
+                    className="funky-btn-primary flex items-center gap-2 px-6 h-12 text-sm shadow-xl shadow-primary/20"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Register New Admin
+                  </button>
+                </div>
+
+                <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className="px-8 py-4 text-left text-[10px] font-black uppercase text-slate-400 tracking-widest">Administrator</th>
+                        <th className="px-8 py-4 text-left text-[10px] font-black uppercase text-slate-400 tracking-widest">Kitchen Assignment</th>
+                        <th className="px-8 py-4 text-right text-[10px] font-black uppercase text-slate-400 tracking-widest">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {admins.map(admin => (
+                        <tr key={`${admin.phone}-${admin.kitchen_id}`} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-8 py-6">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
+                                <User className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="font-bold text-secondary text-sm">{admin.phone}</p>
+                                <p className="text-[10px] font-bold text-slate-400">Authorized Personnel</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-8 py-6">
+                            <span className="px-4 py-1.5 bg-secondary/5 text-secondary rounded-xl text-[10px] font-black uppercase tracking-widest">
+                              {admin.kitchens?.name || 'Unknown Kitchen'}
+                            </span>
+                          </td>
+                          <td className="px-8 py-6 text-right">
+                             <button 
+                               onClick={() => deleteAdmin(admin.phone, admin.kitchen_id)}
+                               className="p-2 text-red-400 hover:text-red-500 transition-colors"
+                             >
+                                <Trash2 className="w-4 h-4" />
+                             </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+            ) : activeTab === 'SUBSCRIPTIONS' ? (
+              <motion.div 
+                key="subscriptions" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                className="space-y-8"
+              >
+                <div>
+                  <h3 className="text-2xl font-display text-secondary">Subscription Control</h3>
+                  <p className="text-sm font-bold text-slate-400">Manage kitchen billing and listing status</p>
+                </div>
+
+                <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className="px-8 py-4 text-left text-[10px] font-black uppercase text-slate-400 tracking-widest">Kitchen</th>
+                        <th className="px-8 py-4 text-left text-[10px] font-black uppercase text-slate-400 tracking-widest">Subscription Status</th>
+                        <th className="px-8 py-4 text-left text-[10px] font-black uppercase text-slate-400 tracking-widest">Expiry Date</th>
+                        <th className="px-8 py-4 text-right text-[10px] font-black uppercase text-slate-400 tracking-widest">Billing Operations</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {kitchens.map(k => {
+                        const isExpired = k.subscription_expires_at ? new Date(k.subscription_expires_at) < new Date() : true;
+                        return (
+                          <tr key={k.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-8 py-6">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-slate-50 rounded-xl overflow-hidden border border-slate-100 flex items-center justify-center">
+                                  {k.image_url ? <img src={k.image_url} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <Store className="w-5 h-5 text-slate-300" />}
+                                </div>
+                                <div>
+                                  <p className="font-bold text-secondary text-sm">{k.name}</p>
+                                  <p className="text-[10px] font-bold text-slate-400 italic">/{k.slug}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-8 py-6">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${(!isExpired && k.is_active) ? 'bg-green-500' : 'bg-red-500'}`} />
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${(!isExpired && k.is_active) ? 'text-green-600' : 'text-red-600'}`}>
+                                  {(!isExpired && k.is_active) ? 'ACTIVE / LIVE' : 'EXPIRED / HIDDEN'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-8 py-6">
+                              <div>
+                                <p className={`text-xs font-bold ${isExpired ? 'text-red-400' : 'text-secondary'}`}>
+                                  {k.subscription_expires_at ? new Date(k.subscription_expires_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No Record'}
+                                </p>
+                                <p className="text-[10px] font-bold text-slate-400 tracking-tight">
+                                  {isExpired ? 'Expired' : `${Math.ceil((new Date(k.subscription_expires_at!).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))} days remaining`}
+                                </p>
+                              </div>
+                            </td>
+                            <td className="px-8 py-6 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button 
+                                  onClick={() => extendSubscription(k.id, 1, k.subscription_expires_at)}
+                                  className="px-4 py-2 bg-slate-50 text-secondary border border-slate-100 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-primary hover:text-white hover:border-primary transition-all"
+                                >
+                                  +1 Month
+                                </button>
+                                <button 
+                                  onClick={() => extendSubscription(k.id, 6, k.subscription_expires_at)}
+                                  className="px-4 py-2 bg-slate-50 text-secondary border border-slate-100 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-secondary hover:text-white hover:border-secondary transition-all"
+                                >
+                                  +6 Months
+                                </button>
+                                <button 
+                                  onClick={() => toggleKitchenStatus(k.id, k.is_active)}
+                                  className={`p-2 rounded-xl transition-all ${k.is_active ? 'text-red-400 hover:bg-red-50' : 'text-slate-300 hover:bg-slate-100'}`}
+                                  title="Emergency Kill Switch"
+                                >
+                                  <Settings className="w-5 h-5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
             ) : (
-               <div className="h-full flex items-center justify-center flex-col text-center opacity-40">
-                  <LayoutDashboard className="w-16 h-16 mb-4 text-slate-300" />
-                  <p className="text-sm font-bold text-slate-400">Implementation in progress...</p>
-               </div>
+                <motion.div 
+                  key="stats" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                  className="space-y-10"
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {[
+                      { label: 'Total Volume', value: stats.totalOrders, sub: 'Orders Life-time', icon: ShoppingBag, color: 'primary' },
+                      { label: 'Network Revenue', value: `₹${stats.totalRevenue}`, sub: 'Net Earnings', icon: Store, color: 'secondary' },
+                      { label: 'Daily Traction', value: stats.todayOrders, sub: 'Orders Today', icon: LayoutDashboard, color: 'green-500' },
+                      { label: 'Daily Revenue', value: `₹${stats.todayRevenue}`, sub: '24h Performance', icon: CheckCircle2, color: 'blue-500' },
+                    ].map(stat => (
+                      <div key={stat.label} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm hover:shadow-lg transition-all border-b-8 border-b-slate-100">
+                        <div className={`w-12 h-12 bg-${stat.color}/10 rounded-2xl flex items-center justify-center mb-6`}>
+                           <stat.icon className={`w-6 h-6 text-${stat.color}`} />
+                        </div>
+                        <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-1">{stat.label}</h4>
+                        <p className="text-3xl font-display text-secondary mb-1">{stat.value}</p>
+                        <p className="text-[10px] font-bold text-slate-400 italic">{stat.sub}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-8">
+                     <div className="col-span-2 bg-white rounded-[40px] p-10 border border-slate-100 shadow-sm relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary via-secondary to-blue-400" />
+                        <h3 className="text-xl font-display text-secondary mb-8">Performance Insights</h3>
+                        <div className="h-[300px] flex items-center justify-center border-2 border-dashed border-slate-50 rounded-3xl">
+                           <p className="text-xs font-bold text-slate-300">Detailed Chart Visualization coming in v2.0</p>
+                        </div>
+                     </div>
+                     <div className="bg-secondary rounded-[40px] p-10 text-white relative overflow-hidden">
+                        <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-3xl" />
+                        <h3 className="text-xl font-display mb-6">Network Health</h3>
+                        <div className="space-y-6">
+                           <div className="space-y-2">
+                              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-white/40">
+                                 <span>Server Status</span>
+                                 <span className="text-green-400">99.9%</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                                 <div className="h-full w-[99.9%] bg-green-400" />
+                              </div>
+                           </div>
+                           <div className="space-y-2">
+                              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-white/40">
+                                 <span>Order Fulfillment</span>
+                                 <span className="text-primary">94%</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                                 <div className="h-full w-[94%] bg-primary" />
+                              </div>
+                           </div>
+                        </div>
+                        <div className="mt-12 p-6 bg-white/5 rounded-3xl border border-white/10">
+                           <p className="text-[11px] font-black uppercase tracking-widest text-primary mb-2">Pro Tip</p>
+                           <p className="text-xs text-white/60 leading-relaxed italic">Monitor the Daily Revenue metric to identify peak kitchen hours across your network.</p>
+                        </div>
+                     </div>
+                  </div>
+                </motion.div>
             )}
           </AnimatePresence>
         </main>
@@ -474,7 +815,13 @@ export default function OwnerPanel() {
                     <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Kitchen Name</label>
                     <input 
                       type="text" value={newKitchen.name} 
-                      onChange={(e) => setNewKitchen({...newKitchen, name: e.target.value})}
+                      onChange={(e) => {
+                        const name = e.target.value;
+                        const slug = name.toLowerCase()
+                          .replace(/[^a-z0-9 ]/g, '')
+                          .replace(/\s+/g, '-');
+                        setNewKitchen({...newKitchen, name, slug});
+                      }}
                       placeholder="Thaat Baat" 
                       className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 font-bold text-sm outline-none focus:ring-2 focus:ring-primary/20"
                     />
@@ -699,6 +1046,52 @@ export default function OwnerPanel() {
               <div className="p-8 border-t border-slate-100 bg-slate-50/50">
                  <p className="text-[10px] text-slate-400 font-bold mb-4">Note: All changes are synced in real-time to the customer app and kitchen admin dashboard.</p>
                  <button onClick={() => setSelectedKitchenForMenu(null)} className="w-full funky-btn-secondary h-16">Close Dashboard</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Add Admin Modal */}
+      <AnimatePresence>
+        {showAddAdmin && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setShowAddAdmin(false)}
+              className="absolute inset-0 bg-secondary/40 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-md bg-white rounded-[40px] p-10 shadow-2xl space-y-6"
+            >
+              <h3 className="text-2xl font-display text-secondary">Assign New Admin</h3>
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Phone Number</label>
+                  <input 
+                    type="tel" value={newAdmin.phone} 
+                    onChange={e => setNewAdmin({...newAdmin, phone: e.target.value})}
+                    placeholder="90000 00001" 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 font-bold text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Assign Kitchen</label>
+                  <select 
+                    value={newAdmin.kitchen_id} 
+                    onChange={e => setNewAdmin({...newAdmin, kitchen_id: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 font-bold text-sm outline-none focus:ring-2 focus:ring-primary/20 appearance-none"
+                  >
+                    <option value="">Select Kitchen...</option>
+                    {kitchens.map(k => (
+                      <option key={k.id} value={k.id}>{k.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-4 pt-4">
+                 <button onClick={() => setShowAddAdmin(false)} className="flex-1 font-bold text-slate-400 hover:text-secondary uppercase text-[10px] tracking-widest">Cancel</button>
+                 <button onClick={handleAddAdmin} className="flex-[2] funky-btn-primary py-4">Register Admin</button>
               </div>
             </motion.div>
           </div>
