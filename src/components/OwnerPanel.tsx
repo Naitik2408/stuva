@@ -55,6 +55,11 @@ export default function OwnerPanel() {
   const [showAddMenuItem, setShowAddMenuItem] = useState(false);
   const [newMenuItem, setNewMenuItem] = useState({ name: '', price: '', category: 'others' as any, thali_type: 'both' as 'normal'|'special'|'both' });
 
+  const [showSubDatePicker, setShowSubDatePicker] = useState(false);
+  const [selectedKitchenForSub, setSelectedKitchenForSub] = useState<Kitchen | null>(null);
+  const [newExpiryDate, setNewExpiryDate] = useState('');
+  const [isDbFixed, setIsDbFixed] = useState(true);
+
   const OWNER_PHONE = '9060557296';
 
   const otpRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
@@ -162,33 +167,24 @@ export default function OwnerPanel() {
     }
   };
 
-  const extendSubscription = async (id: string, months: number, currentExpiry?: string) => {
+  const updateSubscriptionExpiry = async () => {
+    if (!selectedKitchenForSub || !newExpiryDate) return;
     try {
-      const now = new Date();
-      let baseDate = now;
-      
-      if (currentExpiry) {
-        const expiryDate = new Date(currentExpiry);
-        if (expiryDate > now) {
-          baseDate = expiryDate;
-        }
-      }
-
-      const newExpiry = new Date(baseDate);
-      newExpiry.setMonth(newExpiry.getMonth() + months);
-
       const { error } = await supabase
         .from('kitchens')
         .update({ 
-          subscription_expires_at: newExpiry.toISOString(),
+          subscription_expires_at: new Date(newExpiryDate).toISOString(),
           is_active: true 
         })
-        .eq('id', id);
+        .eq('id', selectedKitchenForSub.id);
 
       if (error) throw error;
+      setShowSubDatePicker(false);
+      setSelectedKitchenForSub(null);
+      setNewExpiryDate('');
       fetchKitchens();
     } catch (err) {
-      console.error('Error extending subscription:', err);
+      console.error('Error updating subscription expiry:', err);
     }
   };
 
@@ -202,17 +198,43 @@ export default function OwnerPanel() {
           kitchen_admins (phone)
         `);
       
-      if (error) throw error;
+      if (error) {
+        if (error.code === '42703' || error.message.includes('subscription_expires_at')) {
+          setIsDbFixed(false);
+          // Fallback fetch without failing columns
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('kitchens')
+            .select('id, name, slug, description, image_url, is_active, kitchen_admins(phone)');
+          
+          if (fallbackError) throw fallbackError;
+          
+          const formatted = (fallbackData || []).map(k => ({
+            id: k.id,
+            name: k.name,
+            slug: k.slug,
+            description: k.description,
+            image_url: k.image_url,
+            adminPhone: k.kitchen_admins?.[0]?.phone || 'No Admin',
+            is_active: k.is_active,
+            adminCount: k.kitchen_admins?.length || 0,
+            subscription_expires_at: undefined
+          }));
+          setKitchens(formatted as any);
+          return;
+        }
+        throw error;
+      }
       
+      setIsDbFixed(true);
       const formatted = (data || []).map(k => ({
         id: k.id,
         name: k.name,
         slug: k.slug,
         description: k.description,
         image_url: k.image_url,
-        adminPhone: k.kitchen_admins[0]?.phone || 'No Admin',
+        adminPhone: k.kitchen_admins?.[0]?.phone || 'No Admin',
         is_active: k.is_active,
-        adminCount: k.kitchen_admins.length,
+        adminCount: k.kitchen_admins?.length || 0,
         thali_type: k.thali_type || 'both',
         subscription_expires_at: k.subscription_expires_at
       }));
@@ -649,10 +671,59 @@ export default function OwnerPanel() {
                 key="subscriptions" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
                 className="space-y-8"
               >
-                <div>
-                  <h3 className="text-2xl font-display text-secondary">Subscription Control</h3>
-                  <p className="text-sm font-bold text-slate-400">Manage kitchen billing and listing status</p>
+                <div className="flex justify-between items-end">
+                  <div>
+                    <h3 className="text-2xl font-display text-secondary">Subscription Control</h3>
+                    <p className="text-sm font-bold text-slate-400">Manage kitchen billing and listing status</p>
+                  </div>
+                  {!isDbFixed && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-4 animate-pulse">
+                      <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center text-amber-600">
+                        <Settings className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-amber-700 uppercase tracking-widest">Database Setup Required</p>
+                        <p className="text-[10px] text-amber-600 font-bold">Please run the SQL fix to enable subscription tracking.</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
+
+                {!isDbFixed && (
+                  <div className="bg-slate-900 rounded-[32px] p-8 text-white space-y-4 shadow-2xl">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                        <CheckCircle2 className="w-5 h-5" />
+                      </div>
+                      <h4 className="font-display text-lg">One-Time Database Fix</h4>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      To enable the new subscription feature, you need to add the <code className="text-primary font-mono text-[10px]">subscription_expires_at</code> column to your <code className="text-primary font-mono text-[10px]">kitchens</code> table. 
+                      Copy the code below and run it in your <strong>Supabase SQL Editor</strong>.
+                    </p>
+                    <div className="relative group">
+                      <pre className="bg-black/40 rounded-2xl p-6 font-mono text-[11px] text-primary/80 overflow-x-auto border border-white/5">
+                        ALTER TABLE kitchens ADD COLUMN subscription_expires_at TIMESTAMP WITH TIME ZONE DEFAULT (now() + interval '1 month');
+                      </pre>
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText("ALTER TABLE kitchens ADD COLUMN subscription_expires_at TIMESTAMP WITH TIME ZONE DEFAULT (now() + interval '1 month');");
+                          alert("SQL Command Copied!");
+                        }}
+                        className="absolute right-4 top-4 bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-all text-[10px] font-black uppercase tracking-widest"
+                      >
+                        Copy SQL
+                      </button>
+                    </div>
+                    <button 
+                      onClick={fetchKitchens}
+                      className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-bold text-xs transition-all flex items-center justify-center gap-2"
+                    >
+                      I've run the SQL, check again
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
 
                 <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
                   <table className="w-full">
@@ -701,16 +772,14 @@ export default function OwnerPanel() {
                             <td className="px-8 py-6 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <button 
-                                  onClick={() => extendSubscription(k.id, 1, k.subscription_expires_at)}
-                                  className="px-4 py-2 bg-slate-50 text-secondary border border-slate-100 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-primary hover:text-white hover:border-primary transition-all"
+                                  onClick={() => {
+                                    setSelectedKitchenForSub(k);
+                                    setNewExpiryDate(k.subscription_expires_at ? k.subscription_expires_at.split('T')[0] : '');
+                                    setShowSubDatePicker(true);
+                                  }}
+                                  className="px-6 py-2 bg-primary text-white shadow-lg shadow-primary/20 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all"
                                 >
-                                  +1 Month
-                                </button>
-                                <button 
-                                  onClick={() => extendSubscription(k.id, 6, k.subscription_expires_at)}
-                                  className="px-4 py-2 bg-slate-50 text-secondary border border-slate-100 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-secondary hover:text-white hover:border-secondary transition-all"
-                                >
-                                  +6 Months
+                                  {isExpired ? 'Activate / Renew' : 'Change Expiry'}
                                 </button>
                                 <button 
                                   onClick={() => toggleKitchenStatus(k.id, k.is_active)}
@@ -1092,6 +1161,45 @@ export default function OwnerPanel() {
               <div className="flex gap-4 pt-4">
                  <button onClick={() => setShowAddAdmin(false)} className="flex-1 font-bold text-slate-400 hover:text-secondary uppercase text-[10px] tracking-widest">Cancel</button>
                  <button onClick={handleAddAdmin} className="flex-[2] funky-btn-primary py-4">Register Admin</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Subscription Date Picker Modal */}
+      <AnimatePresence>
+        {showSubDatePicker && selectedKitchenForSub && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setShowSubDatePicker(false)}
+              className="absolute inset-0 bg-secondary/40 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-md bg-white rounded-[40px] p-10 shadow-2xl space-y-6"
+            >
+              <div>
+                <h3 className="text-2xl font-display text-secondary">Set Subscription Expiry</h3>
+                <p className="text-xs font-bold text-slate-400 mt-1">Kitchen: {selectedKitchenForSub.name}</p>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Expiry Date</label>
+                  <input 
+                    type="date" value={newExpiryDate} 
+                    onChange={e => setNewExpiryDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 font-bold text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                 <button onClick={() => setShowSubDatePicker(false)} className="flex-1 font-bold text-slate-400 hover:text-secondary uppercase text-[10px] tracking-widest">Cancel</button>
+                 <button onClick={updateSubscriptionExpiry} className="flex-[2] funky-btn-primary py-4">Update Expiry</button>
               </div>
             </motion.div>
           </div>

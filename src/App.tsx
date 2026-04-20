@@ -251,16 +251,22 @@ function AppContent() {
 
   const fetchKitchens = async () => {
     try {
-      const now = new Date().toISOString();
       const { data, error } = await supabase
         .from('kitchens')
         .select('*')
-        .eq('is_active', true)
-        .gt('subscription_expires_at', now);
+        .eq('is_active', true);
       
       if (error) throw error;
+      
       if (data) {
-        setKitchens(data.map(k => ({
+        const now = new Date();
+        // Filter in-memory if the column exists, otherwise just show active ones
+        const filteredData = data.filter(k => {
+          if (!k.subscription_expires_at) return true;
+          return new Date(k.subscription_expires_at) > now;
+        });
+
+        setKitchens(filteredData.map(k => ({
           id: k.id,
           slug: k.slug,
           name: k.name,
