@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { useState, useMemo, useEffect, useRef, Key, ChangeEvent } from "react";
 import React from "react";
+import { supabase } from "./lib/supabase";
+import OwnerPanel from "./components/OwnerPanel";
 import { 
   BrowserRouter, 
   Routes, 
@@ -72,9 +74,18 @@ interface Order {
   address?: UserAddress;
 }
 
+interface UserProfile {
+  id: string;
+  phone: string;
+  name: string;
+}
+
 interface UserAddress {
-  building: string;
+  id?: string;
+  user_id?: string;
+  apartment: string;
   area: string;
+  landmark?: string;
 }
 
 // Mock Data
@@ -211,13 +222,91 @@ function AppContent() {
   const location = useLocation();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCheckout, setShowCheckout] = useState(false);
-  const [checkoutStep, setCheckoutStep] = useState<'AUTH' | 'OTP' | 'ADDRESS' | 'SUMMARY'>('AUTH');
+  const [checkoutStep, setCheckoutStep] = useState<'AUTH' | 'OTP' | 'NAME' | 'ADDRESS' | 'SUMMARY'>('AUTH');
   const [userAddress, setUserAddress] = useState<UserAddress | null>(null);
   const [tempAddress, setTempAddress] = useState<UserAddress>({ building: '', area: 'Law Gate' });
   const [orderSummary, setOrderSummary] = useState<CartItem[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '']);
+  const [phone, setPhone] = useState('');
+  const [userName, setUserName] = useState('');
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [kitchens, setKitchens] = useState<Kitchen[]>([]);
+
+  // Fetch kitchens globally
+  useEffect(() => {
+    fetchKitchens();
+  }, []);
+
+  const fetchKitchens = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('kitchens')
+        .select('*')
+        .eq('is_active', true);
+      
+      if (error) throw error;
+      if (data) {
+        setKitchens(data.map(k => ({
+          id: k.id,
+          slug: k.slug,
+          name: k.name,
+          rating: k.rating,
+          deliveryTime: k.delivery_time,
+          description: k.description,
+          image: k.image_url
+        })));
+      }
+    } catch (err) {
+      console.error('Failed to load kitchens:', err);
+    }
+  };
+
+  // Security: Rate limiting & Expiry
+  const [otpAttempts, setOtpAttempts] = useState(0);
+  const [lastOtpRequestAt, setLastOtpRequestAt] = useState(0);
+  const [otpExpiry, setOtpExpiry] = useState(0);
+
+  // Load session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+      const savedPhone = localStorage.getItem('stuva_auth_phone');
+      if (savedPhone) {
+        setPhone(savedPhone);
+        const { data: userData } = await supabase
+          .from('users')
+          .select('*')
+          .eq('phone', savedPhone)
+          .single();
+        
+        if (userData) {
+          setCurrentUser(userData);
+          setIsLoggedIn(true);
+          setIsReturningUser(true);
+          
+          // Fetch address
+          const { data: addrData } = await supabase
+            .from('addresses')
+            .select('*')
+            .eq('user_id', userData.id)
+            .order('id', { ascending: false })
+            .limit(1)
+            .single();
+          
+          if (addrData) {
+            setUserAddress({
+              apartment: addrData.apartment,
+              area: addrData.area
+            });
+          }
+        }
+      }
+    };
+    checkSession();
+  }, []);
 
   const handleOtpChange = (value: string, index: number) => {
     if (isNaN(Number(value))) return;
@@ -240,6 +329,7 @@ function AppContent() {
   };
 
   const handleCheckoutClick = () => {
+    setAuthError('');
     if (isLoggedIn) {
       setCheckoutStep('SUMMARY');
       setShowCheckout(true);
@@ -250,23 +340,131 @@ function AppContent() {
   };
 
   const proceedToOtp = () => {
+    if (phone.length !== 10) {
+      setAuthError('Please enter a valid 10-digit number');
+      return;
+    }
+    
+    // Rate limiting check
+    const now = Date.now();
+    if (now - lastOtpRequestAt < 60000 && otpAttempts >= 3) {
+      setAuthError('Too many requests. Please wait a minute.');
+      return;
+    }
+
+    setOtpAttempts(prev => prev + 1);
+    setLastOtpRequestAt(now);
+    setOtpExpiry(now + 300000); // 5 minutes validity
+    setAuthError('');
     setCheckoutStep('OTP');
   };
 
-  const confirmLoginAndOrder = () => {
-    setIsLoggedIn(true);
-    setIsReturningUser(true);
-    if (!userAddress) {
-      setCheckoutStep('ADDRESS');
-    } else {
-      setCheckoutStep('SUMMARY');
+  const confirmLoginAndOrder = async () => {
+    const enteredOtp = otp.join('');
+    
+    // Fake OTP validation
+    if (enteredOtp !== '1234') {
+      setAuthError('Invalid OTP. Please try 1234 for demo.');
+      return;
+    }
+
+    if (Date.now() > otpExpiry) {
+      setAuthError('OTP expired. Please request a new one.');
+      return;
+    }
+
+    setIsProcessing(true);
+    setAuthError('');
+
+    try {
+      // Check if user exists in Supabase
+      const { data: userData, error: fetchError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('phone', phone)
+        .maybeSingle();
+
+      if (userData) {
+        setCurrentUser(userData);
+        setIsLoggedIn(true);
+        setIsReturningUser(true);
+        localStorage.setItem('stuva_auth_phone', phone);
+        
+        // Fetch existing address
+        const { data: addrData } = await supabase
+          .from('addresses')
+          .select('*')
+          .eq('user_id', userData.id)
+          .order('id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (addrData) {
+          setUserAddress({
+            apartment: addrData.apartment,
+            area: addrData.area
+          });
+          setCheckoutStep('SUMMARY');
+        } else {
+          setCheckoutStep('ADDRESS');
+        }
+      } else {
+        // New user
+        setCheckoutStep('NAME');
+      }
+    } catch (err) {
+      setAuthError('Authentication failed. Please try again.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const saveAddressAndContinue = () => {
-    if (!tempAddress.building) return;
-    setUserAddress(tempAddress);
-    setCheckoutStep('SUMMARY');
+  const saveNameAndContinue = async () => {
+    if (!userName.trim()) return;
+    
+    setIsProcessing(true);
+    try {
+      const { data: newUser, error } = await supabase
+        .from('users')
+        .insert([{ phone, name: userName }])
+        .select()
+        .single();
+
+      if (newUser) {
+        setCurrentUser(newUser);
+        setIsLoggedIn(true);
+        localStorage.setItem('stuva_auth_phone', phone);
+        setCheckoutStep('ADDRESS');
+      }
+    } catch (err) {
+      setAuthError('Failed to save name.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const saveAddressAndContinue = async () => {
+    if (!tempAddress.apartment || !currentUser) return;
+    
+    setIsProcessing(true);
+    try {
+      const { error } = await supabase
+        .from('addresses')
+        .insert([{
+          user_id: currentUser.id,
+          apartment: tempAddress.apartment,
+          area: tempAddress.area
+        }]);
+
+      if (!error) {
+        setUserAddress(tempAddress);
+        setCheckoutStep('SUMMARY');
+      }
+    } catch (err) {
+      setAuthError('Failed to save address.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const editAddress = () => {
@@ -310,7 +508,12 @@ function AppContent() {
   const handleCheckoutPhoneChange = (e: ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/\D/g, '').slice(0, 10);
     e.target.value = val;
+    setPhone(val);
   };
+
+  if (location.pathname.startsWith('/owner')) {
+    return <OwnerPanel />;
+  }
 
   return (
     <div className="min-h-screen sm:bg-gray-200 flex justify-center items-center">
@@ -326,12 +529,13 @@ function AppContent() {
             exit={{ opacity: 0 }}
           >
             <Routes location={location}>
-              <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} />} />
+              <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} kitchens={kitchens} />} />
               <Route path="/admin" element={<AdminScreen />} />
                 <Route 
                   path="/kitchen/:slug" 
                   element={
                     <MenuScreen 
+                      kitchens={kitchens}
                       onAddToCart={addToCart}
                       cart={cart}
                       updateQuantity={updateQuantity}
@@ -387,26 +591,15 @@ function AppContent() {
                           <input 
                             type="tel" 
                             maxLength={10}
+                            value={phone}
                             onChange={handleCheckoutPhoneChange}
                             placeholder="9060557296" 
                             className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-14 pr-4 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none"
                           />
                         </div>
                       </div>
-                      
-                      {!isReturningUser && (
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Full Name</label>
-                          <div className="relative">
-                            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
-                            <input 
-                              type="text" 
-                              placeholder="Name" 
-                              className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none"
-                            />
-                          </div>
-                        </div>
-                      )}
+
+                      {authError && <p className="text-xs font-bold text-red-500 px-1">{authError}</p>}
                     </div>
 
                     <button 
@@ -427,7 +620,7 @@ function AppContent() {
                   >
                     <div>
                       <h2 className="text-2xl font-display text-secondary">Verification</h2>
-                      <p className="text-slate-400 font-bold text-sm">We sent a 4-digit code to your phone</p>
+                      <p className="text-slate-400 font-bold text-sm">Use demo code: <span className="text-primary font-black">1234</span></p>
                     </div>
 
                     <div className="flex gap-3 justify-center py-4">
@@ -447,6 +640,8 @@ function AppContent() {
                       ))}
                     </div>
 
+                    {authError && <p className="text-center text-xs font-bold text-red-500">{authError}</p>}
+
                     <div className="text-center">
                       <button className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">
                         Resend Code in 00:29
@@ -455,10 +650,49 @@ function AppContent() {
 
                     <button 
                       onClick={confirmLoginAndOrder}
+                      disabled={isProcessing}
                       className="w-full funky-btn-secondary h-14 flex items-center justify-center gap-2"
                     >
-                      Verify PIN
-                      <ShoppingBag className="w-5 h-5" />
+                      {isProcessing ? 'Verifying...' : 'Verify OTP'}
+                      {!isProcessing && <ShoppingBag className="w-5 h-5" />}
+                    </button>
+                  </motion.div>
+                ) : checkoutStep === 'NAME' ? (
+                  <motion.div 
+                    key="name-step"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="space-y-6"
+                  >
+                    <div>
+                      <h2 className="text-2xl font-display text-secondary">Welcome!</h2>
+                      <p className="text-slate-400 font-bold text-sm">Tell us your name to get started</p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Full Name</label>
+                        <div className="relative">
+                          <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
+                          <input 
+                            autoFocus
+                            type="text" 
+                            value={userName}
+                            onChange={(e) => setUserName(e.target.value)}
+                            placeholder="Enter your name" 
+                            className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={saveNameAndContinue}
+                      disabled={!userName.trim() || isProcessing}
+                      className="w-full funky-btn-primary h-14"
+                    >
+                      {isProcessing ? 'Saving...' : 'Next'}
                     </button>
                   </motion.div>
                 ) : checkoutStep === 'ADDRESS' ? (
@@ -480,8 +714,8 @@ function AppContent() {
                         <input 
                           autoFocus
                           type="text" 
-                          value={tempAddress.building}
-                          onChange={(e) => setTempAddress({ ...tempAddress, building: e.target.value })}
+                          value={tempAddress.apartment}
+                          onChange={(e) => setTempAddress({ ...tempAddress, apartment: e.target.value })}
                           placeholder="e.g. Fragnance appartment, near red apple tower" 
                           className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 focus:ring-2 focus:ring-primary/20 text-sm font-bold outline-none"
                         />
@@ -505,10 +739,10 @@ function AppContent() {
 
                     <button 
                       onClick={saveAddressAndContinue}
-                      disabled={!tempAddress.building}
+                      disabled={!tempAddress.apartment || isProcessing}
                       className="w-full funky-btn-primary h-14 disabled:opacity-50 disabled:grayscale"
                     >
-                      Save & Continue
+                      {isProcessing ? 'Saving...' : 'Save & Continue'}
                     </button>
                   </motion.div>
                 ) : (
@@ -531,7 +765,7 @@ function AppContent() {
                         </div>
                         <div className="flex-1">
                           <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest mb-1">Deliver to</p>
-                          <p className="text-sm font-bold text-secondary leading-tight">{userAddress?.building}</p>
+                          <p className="text-sm font-bold text-secondary leading-tight">{userAddress?.apartment}</p>
                           <p className="text-[12px] font-bold text-slate-400 mt-0.5">{userAddress?.area}</p>
                         </div>
                         <button 
@@ -607,12 +841,12 @@ function SearchBar() {
 }
 
 // --- Home Screen ---
-function HomeScreen({ isLoggedIn }: { isLoggedIn: boolean }) {
+function HomeScreen({ isLoggedIn, kitchens }: { isLoggedIn: boolean, kitchens: Kitchen[] }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const query = searchParams.get('q')?.toLowerCase() || '';
 
-  const filteredKitchens = KITCHENS.filter(k => {
+  const filteredKitchens = kitchens.filter(k => {
     const matchesQuery = !query || k.name.toLowerCase().includes(query) || k.description.toLowerCase().includes(query);
     return matchesQuery;
   });
@@ -753,12 +987,14 @@ function KitchenCard({ kitchen, onClick }: { kitchen: Kitchen, onClick: () => vo
 
 // --- Menu Screen ---
 function MenuScreen({ 
+  kitchens,
   onAddToCart, 
   cart, 
   updateQuantity,
   onCheckout,
   isLoggedIn
 }: { 
+  kitchens: Kitchen[];
   onAddToCart: (item: CartItem) => void;
   cart: CartItem[];
   updateQuantity: (id: string, delta: number) => void;
@@ -767,8 +1003,42 @@ function MenuScreen({
 }) {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const kitchen = useMemo(() => KITCHENS.find(k => k.slug === slug), [slug]);
+  const kitchen = useMemo(() => kitchens.find(k => k.slug === slug), [slug, kitchens]);
   const [isSticky, setIsSticky] = useState(false);
+  const [localMenu, setLocalMenu] = useState<MenuItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (kitchen) {
+      fetchMenu();
+    }
+  }, [kitchen]);
+
+  const fetchMenu = async () => {
+    if (!kitchen) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('menu_items')
+        .select('*')
+        .eq('kitchen_id', kitchen.id);
+      
+      if (error) throw error;
+      if (data) {
+        setLocalMenu(data.map(m => ({
+          id: m.id,
+          name: m.name,
+          price: m.price,
+          available: m.available,
+          category: m.category
+        })));
+      }
+    } catch (err) {
+      console.error('Error loading menu:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     const handleScroll = (e: any) => {
@@ -845,18 +1115,18 @@ function MenuScreen({
           <div className="space-y-4">
             <ThaliCard 
               type="Normal"
-              price={kitchen.menu?.find(i => i.id === 't1')?.price || 80} 
+              price={localMenu.find(i => i.name === 'Normal Thali')?.price || 80} 
               description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice"
-              dryOptions={kitchen.menu?.filter(i => i.category === 'dry_sabji' && i.available).map(i => i.name) || []}
-              gravyOptions={kitchen.menu?.filter(i => i.category === 'gravy_sabji' && i.available).map(i => i.name) || []}
+              dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available).map(i => i.name) || []}
+              gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available).map(i => i.name) || []}
               onAdd={(item) => onAddToCart(item)}
             />
             <ThaliCard 
               type="Special"
-              price={kitchen.menu?.find(i => i.id === 't2')?.price || 120} 
+              price={localMenu.find(i => i.name === 'Special Thali')?.price || 120} 
               description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice, Extra Item"
-              dryOptions={kitchen.menu?.filter(i => i.category === 'dry_sabji' && i.available).map(i => i.name) || []}
-              gravyOptions={kitchen.menu?.filter(i => i.category === 'gravy_sabji' && i.available).map(i => i.name) || []}
+              dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available).map(i => i.name) || []}
+              gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available).map(i => i.name) || []}
               onAdd={(item) => onAddToCart(item)}
             />
           </div>
@@ -864,7 +1134,7 @@ function MenuScreen({
           <div className="space-y-4 pt-4">
             <h3 className="font-display text-xl text-secondary px-1">More Goodies</h3>
             <div className="space-y-3">
-              {kitchen.menu?.filter(i => i.category === 'others' && i.available).map(item => (
+              {localMenu.filter(i => i.category === 'others' && i.available).map(item => (
                 <AddOnItem key={item.id} name={item.name} price={item.price} onAdd={(item) => onAddToCart(item)} />
               ))}
             </div>
