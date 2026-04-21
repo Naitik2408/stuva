@@ -244,6 +244,7 @@ function AppContent() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoadingSession, setIsLoadingSession] = useState(true);
+  const [isLoadingKitchens, setIsLoadingKitchens] = useState(true);
   const [authError, setAuthError] = useState('');
   const [kitchens, setKitchens] = useState<Kitchen[]>([]);
 
@@ -253,6 +254,7 @@ function AppContent() {
   }, []);
 
   const fetchKitchens = async () => {
+    setIsLoadingKitchens(true);
     try {
       const { data, error } = await supabase
         .from('kitchens')
@@ -281,6 +283,8 @@ function AppContent() {
       }
     } catch (err) {
       console.error('Failed to load kitchens:', err);
+    } finally {
+      setIsLoadingKitchens(false);
     }
   };
 
@@ -587,9 +591,25 @@ function AppContent() {
         
         <AnimatePresence mode="wait">
           {isLoadingSession ? (
-            <div className="flex-1 flex flex-col items-center justify-center bg-bg-app">
-              <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-              <p className="mt-4 font-display text-secondary animate-pulse">Waking up STUVA...</p>
+            <div className="flex-1 flex flex-col bg-bg-app overflow-hidden">
+               <header className="px-6 py-8 flex items-center justify-between opacity-50">
+                <div className="space-y-2">
+                  <div className="w-20 h-3 skeleton" />
+                  <div className="w-40 h-6 skeleton" />
+                </div>
+                <div className="w-12 h-12 skeleton rounded-2xl" />
+              </header>
+              <div className="px-6 space-y-4">
+                <div className="w-full h-14 skeleton rounded-[24px]" />
+                <div className="w-48 h-8 skeleton" />
+                <div className="grid grid-cols-2 gap-4">
+                  {[1,2,3,4].map(i => <KitchenSkeleton key={i} />)}
+                </div>
+              </div>
+              <div className="mt-auto p-10 flex flex-col items-center gap-4">
+                <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin opacity-20" />
+                <p className="font-display text-secondary/30 animate-pulse text-sm uppercase tracking-widest">Waking up STUVA...</p>
+              </div>
             </div>
           ) : (
             <motion.div 
@@ -600,7 +620,7 @@ function AppContent() {
               exit={{ opacity: 0 }}
             >
               <Routes location={location}>
-                <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} kitchens={kitchens} currentUser={currentUser} />} />
+                <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} kitchens={kitchens} currentUser={currentUser} isLoading={isLoadingKitchens} />} />
                 <Route path="/admin" element={<AdminScreen />} />
                   <Route 
                     path="/kitchen/:slug" 
@@ -925,7 +945,7 @@ function SearchBar() {
 }
 
 // --- Home Screen ---
-function HomeScreen({ isLoggedIn, kitchens, currentUser }: { isLoggedIn: boolean, kitchens: Kitchen[], currentUser: UserProfile | null }) {
+function HomeScreen({ isLoggedIn, kitchens, currentUser, isLoading }: { isLoggedIn: boolean, kitchens: Kitchen[], currentUser: UserProfile | null, isLoading: boolean }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const query = searchParams.get('q')?.toLowerCase() || '';
@@ -982,7 +1002,9 @@ function HomeScreen({ isLoggedIn, kitchens, currentUser }: { isLoggedIn: boolean
               <h2 className="font-display text-2xl text-secondary">Explore Kitchens</h2>
             </div>
             <div className="px-6 grid grid-cols-2 gap-4 pb-12">
-              {filteredKitchens.length > 0 ? (
+              {isLoading ? (
+                [1,2,3,4,5,6].map(i => <KitchenSkeleton key={i} />)
+              ) : filteredKitchens.length > 0 ? (
                 filteredKitchens.map(kitchen => (
                   <KitchenCard 
                     key={kitchen.id} 
@@ -1026,7 +1048,9 @@ function HomeScreen({ isLoggedIn, kitchens, currentUser }: { isLoggedIn: boolean
               </div>
               
               <div className="grid grid-cols-2 gap-4">
-                {filteredKitchens.length > 0 ? (
+                {isLoading ? (
+                  [1,2,3,4].map(i => <KitchenSkeleton key={i} />)
+                ) : filteredKitchens.length > 0 ? (
                   filteredKitchens.map(kitchen => (
                     <KitchenCard key={kitchen.id} kitchen={kitchen} onClick={() => navigate(`/kitchen/${kitchen.slug}`)} />
                   ))
@@ -1039,6 +1063,52 @@ function HomeScreen({ isLoggedIn, kitchens, currentUser }: { isLoggedIn: boolean
         </div>
       )}
     </motion.div>
+  );
+}
+
+// --- Skeleton Components ---
+function KitchenSkeleton() {
+  return (
+    <div className="funky-card overflow-hidden flex flex-col">
+      <div className="h-40 skeleton rounded-none" />
+      <div className="p-3 space-y-2">
+        <div className="h-4 w-3/4 skeleton" />
+        <div className="h-2 w-1/2 skeleton" />
+      </div>
+    </div>
+  );
+}
+
+function MenuItemSkeleton() {
+  return (
+    <div className="funky-card p-4 flex gap-4">
+      <div className="w-24 h-24 skeleton shrink-0" />
+      <div className="flex-1 space-y-3 py-1">
+        <div className="h-5 w-2/3 skeleton" />
+        <div className="h-3 w-1/3 skeleton" />
+        <div className="h-8 w-1/2 skeleton rounded-xl mt-2" />
+      </div>
+    </div>
+  );
+}
+
+function OrderCardSkeleton() {
+  return (
+    <div className="bg-white p-5 rounded-[28px] border-2 border-slate-50 space-y-4">
+      <div className="flex justify-between items-start">
+        <div className="space-y-2 flex-1">
+          <div className="h-4 w-20 skeleton" />
+          <div className="h-6 w-32 skeleton" />
+          <div className="h-3 w-40 skeleton" />
+        </div>
+        <div className="w-16 h-6 skeleton rounded-full" />
+      </div>
+      <div className="h-[2px] w-full bg-slate-50 border-t-2 border-dashed border-slate-100" />
+      <div className="flex gap-2">
+        <div className="flex-1 h-10 skeleton rounded-xl" />
+        <div className="flex-[2] h-10 skeleton rounded-xl" />
+      </div>
+    </div>
   );
 }
 
@@ -1094,8 +1164,12 @@ function MenuScreen({
 
   useEffect(() => {
     if (kitchen) {
+      document.title = `${kitchen.name} | Order Online with STUVA`;
       fetchMenu();
     }
+    return () => {
+      document.title = 'STUVA | Homemade Food Delivered with Love';
+    };
   }, [kitchen]);
 
   const fetchMenu = async () => {
@@ -1198,30 +1272,42 @@ function MenuScreen({
           </div>
           
           <div className="space-y-4">
-            <ThaliCard 
-              type="Normal"
-              price={localMenu.find(i => i.name.toLowerCase().trim() === 'normal thali')?.price || 70} 
-              description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice"
-              dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available && (i.thali_type === 'normal' || i.thali_type === 'both')).map(i => i.name) || []}
-              gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available && (i.thali_type === 'normal' || i.thali_type === 'both')).map(i => i.name) || []}
-              onAdd={(item) => onAddToCart(item)}
-            />
-            <ThaliCard 
-              type="Special"
-              price={localMenu.find(i => i.name.toLowerCase().trim() === 'special thali')?.price || 80} 
-              description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice, Extra Item"
-              dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available && (i.thali_type === 'special' || i.thali_type === 'both')).map(i => i.name) || []}
-              gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available && (i.thali_type === 'special' || i.thali_type === 'both')).map(i => i.name) || []}
-              onAdd={(item) => onAddToCart(item)}
-            />
+            {loading ? (
+              [1, 2].map(i => <MenuItemSkeleton key={i} />)
+            ) : (
+              <>
+                <ThaliCard 
+                  type="Normal"
+                  price={localMenu.find(i => i.name.toLowerCase().trim() === 'normal thali')?.price || 70} 
+                  description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice"
+                  dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available && (i.thali_type === 'normal' || i.thali_type === 'both')).map(i => i.name) || []}
+                  gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available && (i.thali_type === 'normal' || i.thali_type === 'both')).map(i => i.name) || []}
+                  onAdd={(item) => onAddToCart(item)}
+                />
+                <ThaliCard 
+                  type="Special"
+                  price={localMenu.find(i => i.name.toLowerCase().trim() === 'special thali')?.price || 80} 
+                  description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice, Extra Item"
+                  dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available && (i.thali_type === 'special' || i.thali_type === 'both')).map(i => i.name) || []}
+                  gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available && (i.thali_type === 'special' || i.thali_type === 'both')).map(i => i.name) || []}
+                  onAdd={(item) => onAddToCart(item)}
+                />
+              </>
+            )}
           </div>
 
           <div className="space-y-4 pt-4">
             <h3 className="font-display text-xl text-secondary px-1">More Goodies</h3>
             <div className="space-y-3">
-              {localMenu.filter(i => i.category === 'others' && i.available).map(item => (
-                <AddOnItem key={item.id} name={item.name} price={item.price} onAdd={(item) => onAddToCart(item)} />
-              ))}
+              {loading ? (
+                [1, 2, 3].map(i => <div key={i} className="h-16 skeleton w-full rounded-2xl" />)
+              ) : localMenu.filter(i => i.category === 'others' && i.available).length > 0 ? (
+                localMenu.filter(i => i.category === 'others' && i.available).map(item => (
+                  <AddOnItem key={item.id} name={item.name} price={item.price} onAdd={(item) => onAddToCart(item)} />
+                ))
+              ) : (
+                <div className="py-4 text-center opacity-30 font-bold uppercase text-[10px] tracking-widest italic">No extras available today</div>
+              )}
             </div>
           </div>
         </div>
@@ -1486,8 +1572,17 @@ function AdminScreen() {
   const [showAdminMenu, setShowAdminMenu] = useState(false);
   const [showAddItemForm, setShowAddItemForm] = useState(false);
   const [isMenuLoading, setIsMenuLoading] = useState(false);
+
+  useEffect(() => {
+    if (adminStep === 'DASHBOARD') {
+      document.title = `${currentKitchenName} Dashboard | STUVA Admin`;
+    } else {
+      document.title = 'Kitchen Admin | STUVA';
+    }
+  }, [adminStep, currentKitchenName]);
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
+  const [isOrdersLoading, setIsOrdersLoading] = useState(false);
   const [newItemCategory, setNewItemCategory] = useState<MenuItem['category']>('dry_sabji');
   const [newItemThaliType, setNewItemThaliType] = useState<'normal' | 'special' | 'both'>('both');
 
@@ -1616,6 +1711,7 @@ function AdminScreen() {
   });
 
   const fetchAdminOrders = async (kitchenId: string) => {
+    setIsOrdersLoading(true);
     try {
       const { data, error } = await supabase
         .from('orders')
@@ -1629,6 +1725,8 @@ function AdminScreen() {
       }
     } catch (err) {
       console.error('Error fetching admin orders:', err);
+    } finally {
+      setIsOrdersLoading(false);
     }
   };
 
@@ -2062,7 +2160,9 @@ function AdminScreen() {
                 <div className="flex-1 h-px border-t-2 border-dashed border-slate-100" />
               </div>
               <div className="space-y-4">
-                {orders.filter(o => o.status === 'pending').length > 0 ? (
+                {isOrdersLoading ? (
+                  [1, 2].map(i => <OrderCardSkeleton key={i} />)
+                ) : orders.filter(o => o.status === 'pending').length > 0 ? (
                   orders.filter(o => o.status === 'pending').map(order => (
                     <div key={order.id}>
                       <AdminOrderCard order={order} onUpdate={updateOrderStatus} onView={setSelectedOrder} />
@@ -2081,7 +2181,9 @@ function AdminScreen() {
                 <div className="flex-1 h-px border-t-2 border-dashed border-slate-100" />
               </div>
               <div className="space-y-4">
-                {orders.filter(o => o.status === 'preparing').length > 0 ? (
+                {isOrdersLoading ? (
+                  [1].map(i => <OrderCardSkeleton key={i} />)
+                ) : orders.filter(o => o.status === 'preparing').length > 0 ? (
                   orders.filter(o => o.status === 'preparing').map(order => (
                     <div key={order.id}>
                       <AdminOrderCard order={order} onUpdate={updateOrderStatus} onView={setSelectedOrder} />
@@ -2119,7 +2221,9 @@ function AdminScreen() {
                 <div className="flex-1 h-px border-t-2 border-dashed border-slate-100" />
               </div>
               <div className="space-y-4">
-                {historyOrders.length > 0 ? (
+                {isOrdersLoading ? (
+                  [1, 2].map(i => <OrderCardSkeleton key={i} />)
+                ) : historyOrders.length > 0 ? (
                   historyOrders.map(order => (
                     <div key={order.id}>
                       <AdminOrderCard order={order} onUpdate={updateOrderStatus} onView={setSelectedOrder} />
@@ -2260,7 +2364,15 @@ function AdminScreen() {
                  </div>
                  <div className="space-y-3">
                    {isMenuLoading ? (
-                     <div className="py-20 text-center opacity-40 font-display">Loading menu magic...</div>
+                     [1, 2].map(i => (
+                       <div key={i} className="funky-card p-5 flex justify-between items-center bg-white">
+                          <div className="space-y-2 flex-1">
+                            <div className="h-4 w-32 skeleton" />
+                            <div className="h-3 w-16 skeleton" />
+                          </div>
+                          <div className="w-12 h-6 skeleton rounded-full" />
+                       </div>
+                     ))
                    ) : (
                      menuItems.filter(i => i.category === section.cat).map(item => (
                        <div key={item.id} className="bg-white p-5 rounded-[28px] shadow-sm border border-slate-50 flex flex-col gap-4">
