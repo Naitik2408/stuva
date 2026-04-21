@@ -1088,17 +1088,17 @@ export default function OwnerPanel() {
                               </div>
                               <div className="flex items-center gap-2">
                                 <button 
-                                    onClick={() => toggleMenuItem(item.id, item.available)}
-                                    className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors ${item.available ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'}`}
-                                 >
-                                   {item.available ? 'Available' : 'Disabled'}
-                                 </button>
-                                 <button 
-                                    onClick={() => deleteMenuItem(item.id)}
-                                    className="w-8 h-8 rounded-lg flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
-                                 >
-                                   <Trash2 className="w-4 h-4" />
-                                 </button>
+                                  onClick={() => toggleMenuItem(item.id, item.available)}
+                                  className={`w-12 h-6 rounded-full transition-all relative shadow-inner shrink-0 ${item.available ? 'bg-primary' : 'bg-slate-200'}`}
+                                >
+                                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${item.available ? 'left-7' : 'left-1'}`} />
+                                </button>
+                                <button 
+                                   onClick={() => deleteMenuItem(item.id)}
+                                   className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-50 text-red-500 hover:bg-red-100 transition-all shrink-0"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
                               </div>
                             </div>
                           ))}

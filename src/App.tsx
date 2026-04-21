@@ -18,6 +18,7 @@ import {
   User,
   Search,
   Heart,
+  Trash2,
   Menu as MenuIcon
 } from "lucide-react";
 import { useState, useMemo, useEffect, useRef, Key, ChangeEvent } from "react";
@@ -231,8 +232,9 @@ function AppContent() {
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutStep, setCheckoutStep] = useState<'AUTH' | 'OTP' | 'NAME' | 'ADDRESS' | 'SUMMARY'>('AUTH');
   const [userAddress, setUserAddress] = useState<UserAddress | null>(null);
-  const [tempAddress, setTempAddress] = useState<UserAddress>({ building: '', area: 'Law Gate' });
+  const [tempAddress, setTempAddress] = useState<UserAddress>({ apartment: '', area: 'Law Gate' });
   const [orderSummary, setOrderSummary] = useState<CartItem[]>([]);
+  const [placedOrderId, setPlacedOrderId] = useState<string>('');
   const [activeKitchenId, setActiveKitchenId] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
@@ -241,6 +243,7 @@ function AppContent() {
   const [userName, setUserName] = useState('');
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [authError, setAuthError] = useState('');
   const [kitchens, setKitchens] = useState<Kitchen[]>([]);
 
@@ -289,36 +292,42 @@ function AppContent() {
   // Load session on mount
   useEffect(() => {
     const checkSession = async () => {
-      const savedPhone = localStorage.getItem('stuva_auth_phone');
-      if (savedPhone) {
-        setPhone(savedPhone);
-        const { data: userData } = await supabase
-          .from('users')
-          .select('*')
-          .eq('phone', savedPhone)
-          .single();
-        
-        if (userData) {
-          setCurrentUser(userData);
-          setIsLoggedIn(true);
-          setIsReturningUser(true);
-          
-          // Fetch address
-          const { data: addrData } = await supabase
-            .from('addresses')
+      try {
+        const savedPhone = localStorage.getItem('stuva_auth_phone');
+        if (savedPhone) {
+          setPhone(savedPhone);
+          const { data: userData } = await supabase
+            .from('users')
             .select('*')
-            .eq('user_id', userData.id)
-            .order('id', { ascending: false })
-            .limit(1)
-            .single();
+            .eq('phone', savedPhone)
+            .maybeSingle();
           
-          if (addrData) {
-            setUserAddress({
-              apartment: addrData.apartment,
-              area: addrData.area
-            });
+          if (userData) {
+            setCurrentUser(userData);
+            setIsLoggedIn(true);
+            setIsReturningUser(true);
+            
+            // Fetch address
+            const { data: addrData } = await supabase
+              .from('addresses')
+              .select('*')
+              .eq('user_id', userData.id)
+              .order('id', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            
+            if (addrData) {
+              setUserAddress({
+                apartment: addrData.apartment,
+                area: addrData.area
+              });
+            }
           }
         }
+      } catch (err) {
+        console.error('Session check failed:', err);
+      } finally {
+        setIsLoadingSession(false);
       }
     };
     checkSession();
@@ -345,6 +354,7 @@ function AppContent() {
   };
 
   const handleCheckoutClick = (kitchenId?: string) => {
+    console.log("handleCheckoutClick", { kitchenId, isLoggedIn });
     setAuthError('');
     if (kitchenId) setActiveKitchenId(kitchenId);
     
@@ -493,11 +503,17 @@ function AppContent() {
   };
 
   const finalPlaceOrder = async () => {
-    if (!activeKitchenId || !currentUser) return;
+    console.log("finalPlaceOrder triggered", { activeKitchenId, currentUser, cartTotal, userAddress, cart });
+    if (!activeKitchenId || !currentUser) {
+      console.warn("Early return: missing kitchen or user", { activeKitchenId, currentUser });
+      setAuthError('Session error. Please try again.');
+      return;
+    }
     
     setIsProcessing(true);
+    setAuthError('');
     try {
-      const { error } = await supabase
+      const { data: newOrder, error } = await supabase
         .from('orders')
         .insert([{
           kitchen_id: activeKitchenId,
@@ -507,16 +523,24 @@ function AppContent() {
           items: cart,
           status: 'pending',
           address: userAddress
-        }]);
+        }])
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase insert error:", error);
+        throw error;
+      }
 
+      console.log("Order placed successfully:", newOrder);
+      if (newOrder) setPlacedOrderId(newOrder.id);
       setOrderSummary([...cart]);
       setCart([]);
       setShowCheckout(false);
       navigate('/success');
-    } catch (err) {
-      setAuthError('Failed to place order.');
+    } catch (err: any) {
+      console.error("Catch block error:", err);
+      setAuthError(err.message || 'Failed to place order.');
     } finally {
       setIsProcessing(false);
     }
@@ -562,32 +586,39 @@ function AppContent() {
       <div className="w-full h-screen bg-white relative overflow-hidden flex flex-col sm:w-[375px] sm:rounded-[40px] sm:border-[8px] sm:border-ink sm:shadow-2xl sm:my-0">
         
         <AnimatePresence mode="wait">
-          <motion.div 
-            key={location.pathname}
-            className={`flex-1 flex flex-col ${location.pathname === '/admin' ? 'overflow-y-auto' : 'overflow-hidden'}`}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <Routes location={location}>
-              <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} kitchens={kitchens} />} />
-              <Route path="/admin" element={<AdminScreen />} />
-                <Route 
-                  path="/kitchen/:slug" 
-                  element={
-                    <MenuScreen 
-                      kitchens={kitchens}
-                      onAddToCart={addToCart}
-                      cart={cart}
-                      updateQuantity={updateQuantity}
-                      onCheckout={(kitchenId) => handleCheckoutClick(kitchenId)}
-                      isLoggedIn={isLoggedIn}
-                    />
-                  } 
-                />
-              <Route path="/success" element={<SuccessScreen summary={orderSummary} />} />
-            </Routes>
-          </motion.div>
+          {isLoadingSession ? (
+            <div className="flex-1 flex flex-col items-center justify-center bg-bg-app">
+              <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+              <p className="mt-4 font-display text-secondary animate-pulse">Waking up STUVA...</p>
+            </div>
+          ) : (
+            <motion.div 
+              key={location.pathname}
+              className={`flex-1 flex flex-col ${location.pathname === '/admin' ? 'overflow-y-auto' : 'overflow-hidden'}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <Routes location={location}>
+                <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} kitchens={kitchens} currentUser={currentUser} />} />
+                <Route path="/admin" element={<AdminScreen />} />
+                  <Route 
+                    path="/kitchen/:slug" 
+                    element={
+                      <MenuScreen 
+                        kitchens={kitchens}
+                        onAddToCart={addToCart}
+                        cart={cart}
+                        updateQuantity={updateQuantity}
+                        onCheckout={(kitchenId) => handleCheckoutClick(kitchenId)}
+                        isLoggedIn={isLoggedIn}
+                      />
+                    } 
+                  />
+                <Route path="/success" element={<SuccessScreen summary={orderSummary} orderId={placedOrderId} />} />
+              </Routes>
+            </motion.div>
+          )}
         </AnimatePresence>
 
       {/* Login & Checkout Bottom Sheet */}
@@ -609,6 +640,13 @@ function AppContent() {
               className="absolute bottom-0 left-0 right-0 bg-white rounded-t-sheet z-[120] p-6 pt-2 shadow-2xl"
             >
               <div className="sheet-handle mb-6" />
+              
+              {authError && (
+                <div className="mx-2 mb-4 p-3 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3">
+                  <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center text-red-500 shadow-sm shrink-0">!</div>
+                  <p className="text-xs font-bold text-red-600">{authError}</p>
+                </div>
+              )}
               
               <AnimatePresence mode="wait">
                 {checkoutStep === 'AUTH' ? (
@@ -640,7 +678,7 @@ function AppContent() {
                         </div>
                       </div>
 
-                      {authError && <p className="text-xs font-bold text-red-500 px-1">{authError}</p>}
+                      {/* Global error handled at top */}
                     </div>
 
                     <button 
@@ -830,10 +868,15 @@ function AppContent() {
 
                     <button 
                       onClick={finalPlaceOrder}
-                      className="w-full funky-btn-secondary h-16 text-lg flex items-center justify-center gap-2 group"
+                      disabled={isProcessing}
+                      className="w-full funky-btn-secondary h-16 text-lg flex items-center justify-center gap-2 group disabled:opacity-50 disabled:grayscale"
                     >
-                      Place Order
-                      <ShoppingBag className="w-6 h-6 animate-bounce" />
+                      {isProcessing ? 'Placing Order...' : (
+                        <>
+                          Place Order
+                          <ShoppingBag className="w-6 h-6 animate-bounce" />
+                        </>
+                      )}
                     </button>
                   </motion.div>
                 )}
@@ -882,7 +925,7 @@ function SearchBar() {
 }
 
 // --- Home Screen ---
-function HomeScreen({ isLoggedIn, kitchens }: { isLoggedIn: boolean, kitchens: Kitchen[] }) {
+function HomeScreen({ isLoggedIn, kitchens, currentUser }: { isLoggedIn: boolean, kitchens: Kitchen[], currentUser: UserProfile | null }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const query = searchParams.get('q')?.toLowerCase() || '';
@@ -958,7 +1001,7 @@ function HomeScreen({ isLoggedIn, kitchens }: { isLoggedIn: boolean, kitchens: K
         <div className="space-y-0">
           <header className="px-6 pt-8 pb-4 flex justify-between items-start">
             <div>
-              <h1 className="text-secondary font-display text-4xl leading-none">Hi, Zesan</h1>
+              <h1 className="text-secondary font-display text-4xl leading-none capitalize">Hi, {currentUser?.name?.split(' ')[0] || 'Zesan'}</h1>
               <div className="flex items-center gap-1.5 mt-1">
                 <MapPin className="w-4 h-4 text-primary" strokeWidth={3} />
                 <span className="text-[12px] font-bold text-slate-400 uppercase tracking-tight">Law Gate near LPU</span>
@@ -968,7 +1011,7 @@ function HomeScreen({ isLoggedIn, kitchens }: { isLoggedIn: boolean, kitchens: K
               onClick={() => navigate('/admin')}
               className="w-12 h-12 rounded-2xl bg-white border-2 border-primary/20 p-1 shadow-sm cursor-pointer active:scale-95 transition-transform"
             >
-              <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" className="w-full h-full rounded-xl" alt="profile" />
+              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.name || 'Felix'}`} className="w-full h-full rounded-xl" alt="profile" />
             </div>
           </header>
 
@@ -1194,7 +1237,7 @@ function MenuScreen({
             className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[340px] z-[100]"
           >
             <button 
-              onClick={onCheckout}
+              onClick={() => kitchen && onCheckout(kitchen.id)}
               className="w-full cart-bar-style group active:scale-95 transition-all active:rotate-1"
             >
               <div className="flex items-center gap-4">
@@ -1365,7 +1408,7 @@ function AddOnItem({
 }
 
 // --- Success Screen ---
-function SuccessScreen({ summary }: { summary: CartItem[] }) {
+function SuccessScreen({ summary, orderId }: { summary: CartItem[], orderId: string }) {
   const navigate = useNavigate();
   const total = useMemo(() => summary.reduce((a, c) => a + (c.price * c.quantity), 0), [summary]);
 
@@ -1393,7 +1436,7 @@ function SuccessScreen({ summary }: { summary: CartItem[] }) {
 
       <div className="space-y-2">
         <h1 className="text-4xl font-display tracking-tight text-secondary">Aww Yeah!</h1>
-        <p className="font-bold text-slate-500 bg-white/50 px-4 py-1 rounded-full inline-block">Order #0003</p>
+        <p className="font-bold text-slate-500 bg-white/50 px-4 py-1 rounded-full inline-block">Order #{orderId ? orderId.slice(0, 8) : '0003'}</p>
       </div>
 
       <div className="w-full funky-card p-6 space-y-4">
@@ -1425,15 +1468,21 @@ function SuccessScreen({ summary }: { summary: CartItem[] }) {
 // --- Admin Section ---
 function AdminScreen() {
   const navigate = useNavigate();
-  const [adminStep, setAdminStep] = useState<'PHONE' | 'OTP' | 'DASHBOARD'>('PHONE');
-  const [adminPhone, setAdminPhone] = useState('');
+  const [adminStep, setAdminStep] = useState<'PHONE' | 'OTP' | 'DASHBOARD'>(() => {
+    const saved = localStorage.getItem('kitchen_admin_authenticated');
+    return saved === 'true' ? 'DASHBOARD' : 'PHONE';
+  });
+  const [adminPhone, setAdminPhone] = useState(() => localStorage.getItem('kitchen_admin_phone') || '');
+  const [error, setError] = useState('');
+  const [isCheckingPhone, setIsCheckingPhone] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [adminOtp, setAdminOtp] = useState(['', '', '', '']);
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'history' | 'stats'>('orders');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [currentKitchenId, setCurrentKitchenId] = useState<string | null>(null);
+  const [currentKitchenName, setCurrentKitchenName] = useState('My Kitchen');
   const [showAdminMenu, setShowAdminMenu] = useState(false);
   const [showAddItemForm, setShowAddItemForm] = useState(false);
   const [isMenuLoading, setIsMenuLoading] = useState(false);
@@ -1461,8 +1510,126 @@ function AdminScreen() {
     }
   };
 
-  const updateOrderStatus = (orderId: string, nextStatus: Order['status']) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
+  const handleAdminAuthSuccess = () => {
+    localStorage.setItem('kitchen_admin_authenticated', 'true');
+    localStorage.setItem('kitchen_admin_phone', adminPhone);
+    setAdminStep('DASHBOARD');
+  };
+
+  const handleAdminLogout = () => {
+    localStorage.removeItem('kitchen_admin_authenticated');
+    localStorage.removeItem('kitchen_admin_phone');
+    setAdminStep('PHONE');
+    setShowAdminMenu(false);
+  };
+
+  const handlePhoneSubmit = async () => {
+    if (adminPhone.length !== 10) return;
+    setIsCheckingPhone(true);
+    setError('');
+    
+    try {
+      const { data, error } = await supabase
+        .from('kitchen_admins')
+        .select('phone, kitchens(name)')
+        .eq('phone', adminPhone)
+        .maybeSingle();
+      
+      if (error) throw error;
+      
+      if (data) {
+        if (data.kitchens) {
+          setCurrentKitchenName((data.kitchens as any).name);
+        }
+        setAdminStep('OTP');
+      } else {
+        setError('Unauthorized! This number is not registered as a Kitchen Admin.');
+      }
+    } catch (err) {
+      console.error('Error checking admin:', err);
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setIsCheckingPhone(false);
+    }
+  };
+
+  const updateOrderStatus = async (orderId: string, nextStatus: Order['status']) => {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: nextStatus })
+        .eq('id', orderId);
+      
+      if (error) throw error;
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
+    } catch (err) {
+      console.error('Error updating order status:', err);
+    }
+  };
+
+  useEffect(() => {
+    let channel: any;
+    
+    if (adminStep === 'DASHBOARD' && currentKitchenId) {
+      fetchAdminOrders(currentKitchenId);
+      
+      // Real-time subscription for new orders
+      channel = supabase
+        .channel('public:orders')
+        .on(
+          'postgres_changes', 
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'orders',
+            filter: `kitchen_id=eq.${currentKitchenId}`
+          }, 
+          (payload) => {
+            if (payload.eventType === 'INSERT') {
+              const newOrder = mapOrder(payload.new);
+              setOrders(prev => [newOrder, ...prev]);
+              // Basic browser notification sound could be added here
+            } else if (payload.eventType === 'UPDATE') {
+              setOrders(prev => prev.map(o => o.id === payload.new.id ? mapOrder(payload.new) : o));
+            }
+          }
+        )
+        .subscribe();
+    }
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [adminStep, currentKitchenId]);
+
+  const mapOrder = (dbOrder: any): Order => ({
+    id: dbOrder.id,
+    kitchen_id: dbOrder.kitchen_id,
+    customerName: dbOrder.customer_name,
+    customerPhone: dbOrder.customer_phone,
+    total: dbOrder.total,
+    status: dbOrder.status,
+    time: new Date(dbOrder.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    timestamp: new Date(dbOrder.created_at).getTime(),
+    items: dbOrder.items,
+    address: dbOrder.address
+  });
+
+  const fetchAdminOrders = async (kitchenId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('kitchen_id', kitchenId)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      if (data) {
+        setOrders(data.map(mapOrder));
+      }
+    } catch (err) {
+      console.error('Error fetching admin orders:', err);
+    }
   };
 
   useEffect(() => {
@@ -1476,12 +1643,15 @@ function AdminScreen() {
       // 1. Get kitchen ID for this phone
       const { data: adminData } = await supabase
         .from('kitchen_admins')
-        .select('kitchen_id')
+        .select('kitchen_id, kitchens(name)')
         .eq('phone', adminPhone)
         .single();
       
       if (adminData) {
         setCurrentKitchenId(adminData.kitchen_id);
+        if (adminData.kitchens) {
+          setCurrentKitchenName((adminData.kitchens as any).name);
+        }
         fetchAdminMenuItems(adminData.kitchen_id);
       }
     } catch (err) {
@@ -1646,6 +1816,15 @@ function AdminScreen() {
             </div>
 
             <div className="space-y-4">
+              {error && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-red-50 border border-red-100 rounded-2xl p-4 text-center"
+                >
+                  <p className="text-red-500 text-xs font-bold leading-relaxed">{error}</p>
+                </motion.div>
+              )}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-widest text-primary/40 px-1">Admin Number</label>
                 <div className="relative">
@@ -1654,18 +1833,35 @@ function AdminScreen() {
                     type="tel" 
                     maxLength={10}
                     value={adminPhone}
-                    onChange={(e) => setAdminPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    onChange={(e) => {
+                      setAdminPhone(e.target.value.replace(/\D/g, '').slice(0, 10));
+                      setError('');
+                    }}
                     placeholder="9060557296" 
                     className="w-full bg-white border-2 border-slate-50 shadow-sm rounded-2xl py-4 pl-14 pr-6 focus:ring-4 focus:ring-primary/10 text-sm font-bold outline-none transition-all" 
                   />
                 </div>
               </div>
               <button 
-                onClick={() => setAdminStep('OTP')}
-                disabled={adminPhone.length !== 10}
-                className="w-full funky-btn-primary h-16 text-lg disabled:opacity-50 disabled:grayscale transition-all"
+                onClick={handlePhoneSubmit}
+                disabled={adminPhone.length !== 10 || isCheckingPhone}
+                className="w-full funky-btn-primary h-16 text-lg disabled:opacity-50 disabled:grayscale transition-all flex items-center justify-center gap-2"
               >
-                Send Secret Code
+                {isCheckingPhone ? (
+                  <>
+                    <motion.div 
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                      className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full"
+                    />
+                    Verifying...
+                  </>
+                ) : (
+                  <>
+                    Send Secret Code
+                    <ArrowRight className="w-5 h-5" />
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1730,7 +1926,7 @@ function AdminScreen() {
               </div>
 
               <button 
-                onClick={() => setAdminStep('DASHBOARD')}
+                onClick={handleAdminAuthSuccess}
                 disabled={adminOtp.some(d => !d)}
                 className="w-full funky-btn-primary h-16 text-lg disabled:opacity-50 disabled:grayscale transition-all"
               >
@@ -1757,7 +1953,7 @@ function AdminScreen() {
             <span className="text-[10px] font-black uppercase tracking-widest">Kitchen Status</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-display text-lg text-secondary">Thaat Baat</span>
+            <span className="font-display text-lg text-secondary">{currentKitchenName}</span>
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <span className="text-[10px] font-black text-green-600 uppercase tracking-widest">Open</span>
           </div>
@@ -1813,10 +2009,10 @@ function AdminScreen() {
               ))}
               <div className="h-px bg-slate-100 my-1" />
               <button 
-                onClick={() => { setAdminStep('AUTH'); setShowAdminMenu(false); }}
+                onClick={handleAdminLogout}
                 className="w-full px-4 py-3 flex items-center gap-3 text-sm font-bold text-red-500 hover:bg-red-50"
               >
-                <Plus className="w-4 h-4 rotate-45" />
+                <Trash2 className="w-4 h-4" />
                 Logout
               </button>
             </motion.div>
@@ -1961,7 +2157,7 @@ function AdminScreen() {
                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
                         <Clock className="w-3 h-3" /> {order.time}
                      </p>
-                     <h4 className="font-display text-lg text-secondary">#{order.id}</h4>
+                     <h4 className="font-display text-lg text-secondary">#{order.id.slice(0, 8)}</h4>
                      <p className="text-xs font-bold text-slate-500">{order.customerName}</p>
                    </div>
                    <div className="text-right">
@@ -2069,12 +2265,12 @@ function AdminScreen() {
                      menuItems.filter(i => i.category === section.cat).map(item => (
                        <div key={item.id} className="bg-white p-5 rounded-[28px] shadow-sm border border-slate-50 flex flex-col gap-4">
                          <div className="flex items-center justify-between">
-                           <div className="flex-1 mr-4">
+                           <div className="flex-1 min-w-0 mr-4">
                              <div className="flex items-center gap-2">
                                <input 
                                   type="text" value={item.name} 
                                   onChange={e => updateItemName(item.id, e.target.value)}
-                                  className="font-display text-base text-secondary bg-transparent outline-none flex-1"
+                                  className="font-display text-base text-secondary bg-transparent outline-none w-full truncate"
                                />
                                {(item.category === 'dry_sabji' || item.category === 'gravy_sabji') && (
                                  <span className="text-[8px] font-black uppercase bg-slate-50 text-slate-300 px-1.5 py-0.5 rounded leading-none shrink-0">{item.thali_type}</span>
@@ -2097,18 +2293,18 @@ function AdminScreen() {
                                </div>
                              )}
                            </div>
-                           <div className="flex items-center gap-3">
+                           <div className="flex items-center gap-3 shrink-0">
                              {section.cat !== 'thali' && (
                                <button 
                                  onClick={() => deleteItem(item.id)}
-                                 className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-50 text-red-400 active:scale-90 transition-transform"
+                                 className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-50 text-red-500 active:scale-95 transition-all hover:bg-red-100"
                                >
-                                  <Plus className="w-4 h-4 rotate-45" />
+                                  <Trash2 className="w-4 h-4" />
                                </button>
                              )}
                              <button 
                                onClick={() => toggleMenuItem(item.id)}
-                               className={`w-12 h-6 rounded-full transition-all relative ${item.available ? 'bg-primary' : 'bg-slate-200'}`}
+                               className={`w-12 h-6 rounded-full transition-all relative shadow-inner ${item.available ? 'bg-primary' : 'bg-slate-200'}`}
                              >
                                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${item.available ? 'left-7' : 'left-1'}`} />
                              </button>
@@ -2153,7 +2349,11 @@ function AdminScreen() {
         )}
       </div>
 
-      <OrderDetailsSheet order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+      <OrderDetailsSheet 
+        order={selectedOrder} 
+        onClose={() => setSelectedOrder(null)} 
+        onUpdate={updateOrderStatus}
+      />
     </div>
   );
 }
@@ -2165,7 +2365,7 @@ function AdminOrderCard({ order, onUpdate, onView }: { order: Order, onUpdate: a
       <div className="flex justify-between items-start mb-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-             <span className="font-display text-xl text-secondary">#{order.id}</span>
+             <span className="font-display text-xl text-secondary">#{order.id.slice(0, 8)}</span>
              <StatusBadge status={order.status} />
           </div>
           <div className="flex items-center gap-1.5 text-slate-400">
@@ -2232,7 +2432,7 @@ function StatusBadge({ status }: { status: Order['status'] }) {
   );
 }
 
-function OrderDetailsSheet({ order, onClose }: { order: Order | null, onClose: () => void }) {
+function OrderDetailsSheet({ order, onClose, onUpdate }: { order: Order | null, onClose: () => void, onUpdate: (id: string, status: Order['status']) => void }) {
   return (
     <AnimatePresence>
       {order && (
@@ -2243,9 +2443,9 @@ function OrderDetailsSheet({ order, onClose }: { order: Order | null, onClose: (
              <div className="flex justify-between items-start">
                <div>
                  <h2 className="font-display text-3xl text-secondary">Order Details</h2>
-                 <p className="text-slate-400 font-bold">#{order.id} • {order.time}</p>
+                 <p className="text-slate-400 font-bold">#{order.id.slice(0, 8)} • {order.time}</p>
                </div>
-               <button onClick={onClose} className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center"><Plus className="rotate-45 text-slate-400" /></button>
+               <button onClick={onClose} className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center transition-transform active:scale-95"><Plus className="rotate-45 text-slate-400" /></button>
              </div>
 
              <div className="space-y-4">
@@ -2287,12 +2487,38 @@ function OrderDetailsSheet({ order, onClose }: { order: Order | null, onClose: (
                </div>
              </div>
 
-             <button 
-                className="w-full funky-btn-secondary h-16 text-lg"
-                onClick={onClose}
-             >
-               Close Summary
-             </button>
+             <div className="flex gap-4">
+               <button 
+                 className="flex-1 bg-slate-100 text-slate-500 h-16 rounded-3xl font-display text-lg active:scale-95 transition-transform"
+                 onClick={onClose}
+               >
+                 Back
+               </button>
+               {order.status === 'pending' && (
+                 <button 
+                   onClick={() => { onUpdate(order.id, 'preparing'); onClose(); }} 
+                   className="flex-[2] bg-primary text-white h-16 rounded-3xl font-display text-lg shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center justify-center text-center"
+                 >
+                   Accept Order
+                 </button>
+               )}
+               {order.status === 'preparing' && (
+                 <button 
+                   onClick={() => { onUpdate(order.id, 'on-the-way'); onClose(); }} 
+                   className="flex-[2] bg-blue-600 text-white h-16 rounded-3xl font-display text-lg shadow-xl shadow-blue/20 active:scale-95 transition-all flex items-center justify-center text-center"
+                 >
+                   Send Out
+                 </button>
+               )}
+               {order.status === 'on-the-way' && (
+                 <button 
+                   onClick={() => { onUpdate(order.id, 'delivered'); onClose(); }} 
+                   className="flex-[2] bg-secondary text-white h-16 rounded-3xl font-display text-lg shadow-xl shadow-secondary/20 active:scale-95 transition-all flex items-center justify-center text-center"
+                 >
+                   Delivered
+                 </button>
+               )}
+             </div>
           </motion.div>
         </>
       )}
