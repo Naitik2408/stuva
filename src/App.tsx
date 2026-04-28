@@ -67,12 +67,13 @@ interface CartItem {
 
 interface Order {
   id: string;
+  dailyOrderNo?: string;
   kitchen_id: string;
   customerName: string;
   customerPhone: string;
   items: CartItem[];
   total: number;
-  status: 'pending' | 'preparing' | 'on-the-way' | 'delivered';
+  status: 'pending' | 'preparing' | 'on-the-way' | 'delivered' | 'cancelled';
   time: string;
   timestamp: number; 
   address?: UserAddress;
@@ -228,14 +229,38 @@ function ScrollToTop() {
 function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    const saved = localStorage.getItem('stuva_cart');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [activeKitchenId, setActiveKitchenId] = useState<string | null>(() => {
+    return localStorage.getItem('stuva_cart_kitchen_id');
+  });
+
+  // Save cart to localStorage
+  useEffect(() => {
+    localStorage.setItem('stuva_cart', JSON.stringify(cart));
+    if (cart.length === 0) {
+      setActiveKitchenId(null);
+      localStorage.removeItem('stuva_cart_kitchen_id');
+    }
+  }, [cart]);
+
+  useEffect(() => {
+    if (activeKitchenId) {
+      localStorage.setItem('stuva_cart_kitchen_id', activeKitchenId);
+    } else {
+      localStorage.removeItem('stuva_cart_kitchen_id');
+    }
+  }, [activeKitchenId]);
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutStep, setCheckoutStep] = useState<'AUTH' | 'OTP' | 'NAME' | 'ADDRESS' | 'SUMMARY'>('AUTH');
   const [userAddress, setUserAddress] = useState<UserAddress | null>(null);
   const [tempAddress, setTempAddress] = useState<UserAddress>({ apartment: '', area: 'Law Gate' });
   const [orderSummary, setOrderSummary] = useState<CartItem[]>([]);
   const [placedOrderId, setPlacedOrderId] = useState<string>('');
-  const [activeKitchenId, setActiveKitchenId] = useState<string | null>(null);
+  const [placedOrderNo, setPlacedOrderNo] = useState<string>('');
+  const [showOrders, setShowOrders] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '']);
@@ -247,6 +272,7 @@ function AppContent() {
   const [isLoadingKitchens, setIsLoadingKitchens] = useState(true);
   const [authError, setAuthError] = useState('');
   const [kitchens, setKitchens] = useState<Kitchen[]>([]);
+  const activeKitchen = useMemo(() => kitchens.find(k => k.id === activeKitchenId), [kitchens, activeKitchenId]);
 
   // Fetch kitchens globally
   useEffect(() => {
@@ -517,10 +543,24 @@ function AppContent() {
     setIsProcessing(true);
     setAuthError('');
     try {
+      // Get the next order number for today
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      
+      const { count } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('kitchen_id', activeKitchenId)
+        .gte('created_at', startOfToday.toISOString());
+
+      const nextNo = (count || 0) + 1;
+      const formattedNo = nextNo.toString().padStart(4, '0');
+
       const { data: newOrder, error } = await supabase
         .from('orders')
         .insert([{
           kitchen_id: activeKitchenId,
+          daily_order_no: formattedNo,
           customer_name: currentUser.name,
           customer_phone: currentUser.phone,
           total: cartTotal,
@@ -537,9 +577,15 @@ function AppContent() {
       }
 
       console.log("Order placed successfully:", newOrder);
-      if (newOrder) setPlacedOrderId(newOrder.id);
+      if (newOrder) {
+        setPlacedOrderId(newOrder.id);
+        setPlacedOrderNo(newOrder.daily_order_no);
+      }
       setOrderSummary([...cart]);
       setCart([]);
+      setActiveKitchenId(null);
+      localStorage.removeItem('stuva_cart');
+      localStorage.removeItem('stuva_cart_kitchen_id');
       setShowCheckout(false);
       navigate('/success');
     } catch (err: any) {
@@ -550,8 +596,22 @@ function AppContent() {
     }
   };
 
-  const addToCart = (item: CartItem) => {
+  const addToCart = (item: CartItem, kitchenId: string) => {
     setCart(prev => {
+      // If adding from a different kitchen, we could either clear and add, or reject
+      // For best UX, if it's the first item, we set the activeKitchenId
+      if (prev.length === 0) {
+        setActiveKitchenId(kitchenId);
+      } else if (activeKitchenId && activeKitchenId !== kitchenId) {
+        // This shouldn't happen if we add UI guards, but as a fallback:
+        // We warn or just clear. Let's stick with the single kitchen rule.
+        if (window.confirm("Your cart contains items from another kitchen. Clear cart to add this item?")) {
+          setActiveKitchenId(kitchenId);
+          return [item];
+        }
+        return prev;
+      }
+
       const existing = prev.find(i => i.id === item.id);
       if (existing) {
         return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + item.quantity } : i);
@@ -622,8 +682,7 @@ function AppContent() {
               <Routes location={location}>
                 <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} kitchens={kitchens} currentUser={currentUser} isLoading={isLoadingKitchens} />} />
                 <Route path="/admin" element={<AdminScreen />} />
-                  <Route 
-                    path="/kitchen/:slug" 
+                  <Route path="/kitchen/:slug" 
                     element={
                       <MenuScreen 
                         kitchens={kitchens}
@@ -635,7 +694,8 @@ function AppContent() {
                       />
                     } 
                   />
-                <Route path="/success" element={<SuccessScreen summary={orderSummary} orderId={placedOrderId} />} />
+                <Route path="/orders" element={<UserOrdersScreen currentUser={currentUser} kitchens={kitchens} />} />
+                <Route path="/success" element={<SuccessScreen summary={orderSummary} orderId={placedOrderId} orderNo={placedOrderNo} />} />
               </Routes>
             </motion.div>
           )}
@@ -854,7 +914,7 @@ function AppContent() {
                   >
                     <div>
                       <h2 className="text-2xl font-display text-secondary">Checkout</h2>
-                      <p className="text-slate-400 font-bold text-sm">Review your order details</p>
+                      <p className="text-slate-400 font-bold text-sm">Review your order from <span className="text-primary uppercase tracking-wider">{activeKitchen?.name || 'Kitchen'}</span></p>
                     </div>
 
                     <div className="bg-primary/5 rounded-[32px] p-6 border-2 border-primary/20 space-y-4">
@@ -862,17 +922,68 @@ function AppContent() {
                         <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center text-primary shadow-sm">
                           <MapPin className="w-5 h-5" />
                         </div>
-                        <div className="flex-1">
-                          <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest mb-1">Deliver to</p>
-                          <p className="text-sm font-bold text-secondary leading-tight">{userAddress?.apartment}</p>
-                          <p className="text-[12px] font-bold text-slate-400 mt-0.5">{userAddress?.area}</p>
-                        </div>
+                <div className="flex-1">
+                  <p className="text-[10px] font-black text-primary/40 uppercase tracking-widest mb-1">Deliver to</p>
+                  <p className="text-sm font-bold text-secondary leading-tight">{userAddress?.apartment}</p>
+                  <p className="text-[12px] font-bold text-slate-400 mt-0.5">{userAddress?.area}</p>
+                </div>
                         <button 
                           onClick={editAddress}
                           className="px-3 py-1.5 bg-white text-[10px] font-black text-primary rounded-xl shadow-sm active:scale-95 transition-transform"
                         >
                           EDIT
                         </button>
+                      </div>
+
+                      {/* Item List for Review */}
+                      <div className="pt-4 border-t-2 border-dashed border-primary/10 space-y-3 max-h-[220px] overflow-y-auto no-scrollbar">
+                        <div className="flex justify-between items-center px-1">
+                          <p className="text-[9px] font-black text-primary/40 uppercase tracking-widest">Your Selection</p>
+                          <button 
+                            onClick={() => {
+                              setCart([]);
+                              setActiveKitchenId(null);
+                              localStorage.removeItem('stuva_cart');
+                              localStorage.removeItem('stuva_cart_kitchen_id');
+                              setShowCheckout(false);
+                            }}
+                            className="text-[9px] font-black text-red-400 uppercase tracking-widest hover:text-red-500"
+                          >
+                            Clear All
+                          </button>
+                        </div>
+                        {cart.map(item => (
+                          <div key={item.id} className="flex items-center justify-between bg-white/50 p-3 rounded-2xl border border-primary/5">
+                            <div className="flex-1 min-w-0 pr-4">
+                              <p className="text-sm font-bold text-secondary truncate">{item.name}</p>
+                              {item.options && (
+                                <p className="text-[9px] text-slate-400 font-bold leading-tight">
+                                  {[
+                                    item.options.withRice ? 'Rice' : 'No Rice',
+                                    item.options.drySabji,
+                                    item.options.gravySabji
+                                  ].filter(Boolean).join(' • ')}
+                                </p>
+                              )}
+                              <p className="text-xs font-display text-primary">₹{item.price * item.quantity}</p>
+                            </div>
+                            <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-sm border border-slate-100">
+                              <button 
+                                onClick={() => updateQuantity(item.id, -1)}
+                                className="w-7 h-7 flex items-center justify-center text-secondary active:scale-90"
+                              >
+                                <Minus className="w-3.5 h-3.5" />
+                              </button>
+                              <span className="font-display text-xs min-w-[15px] text-center">{item.quantity}</span>
+                              <button 
+                                onClick={() => updateQuantity(item.id, 1)}
+                                className="w-7 h-7 flex items-center justify-center text-secondary active:scale-90"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
 
                       <div className="pt-4 border-t-2 border-dashed border-primary/10 flex justify-between items-center">
@@ -1029,11 +1140,19 @@ function HomeScreen({ isLoggedIn, kitchens, currentUser, isLoading }: { isLogged
                 <span className="text-[12px] font-bold text-slate-400 uppercase tracking-tight">Law Gate near LPU</span>
               </div>
             </div>
-            <div 
-              onClick={() => navigate('/admin')}
-              className="w-12 h-12 rounded-2xl bg-white border-2 border-primary/20 p-1 shadow-sm cursor-pointer active:scale-95 transition-transform"
-            >
-              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.name || 'Felix'}`} className="w-full h-full rounded-xl" alt="profile" />
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => navigate('/orders')}
+                className="w-12 h-12 bg-white shadow-xl shadow-ink/5 rounded-2xl flex items-center justify-center border border-slate-50 active:scale-90 transition-transform relative"
+              >
+                <Clock className="w-5 h-5 text-secondary" />
+              </button>
+              <div 
+                onClick={() => navigate('/admin')}
+                className="w-12 h-12 rounded-2xl bg-white border-2 border-primary/20 p-1 shadow-sm cursor-pointer active:scale-95 transition-transform"
+              >
+                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.name || 'Felix'}`} className="w-full h-full rounded-xl" alt="profile" />
+              </div>
             </div>
           </header>
 
@@ -1149,7 +1268,7 @@ function MenuScreen({
   isLoggedIn
 }: { 
   kitchens: Kitchen[];
-  onAddToCart: (item: CartItem) => void;
+  onAddToCart: (item: CartItem, kitchenId: string) => void;
   cart: CartItem[];
   updateQuantity: (id: string, delta: number) => void;
   onCheckout: (kitchenId: string) => void;
@@ -1242,7 +1361,16 @@ function MenuScreen({
             {kitchen.name}
           </motion.h2>
         )}
-        <div className="w-10" /> {/* Spacer instead of Heart */}
+        {isLoggedIn ? (
+          <button 
+            onClick={() => navigate('/orders')}
+            className="w-10 h-10 bg-white shadow-lg rounded-xl flex items-center justify-center text-secondary active:scale-90 transition-transform border border-slate-100"
+          >
+            <Clock className="w-5 h-5" />
+          </button>
+        ) : (
+          <div className="w-10" />
+        )}
       </header>
 
       {/* Hero Section */}
@@ -1282,7 +1410,10 @@ function MenuScreen({
                   description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice"
                   dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available && (i.thali_type === 'normal' || i.thali_type === 'both')).map(i => i.name) || []}
                   gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available && (i.thali_type === 'normal' || i.thali_type === 'both')).map(i => i.name) || []}
-                  onAdd={(item) => onAddToCart(item)}
+                  onAdd={(item) => onAddToCart(item, kitchen.id)}
+                  onUpdateQuantity={updateQuantity}
+                  cart={cart}
+                  kitchenId={kitchen.id}
                 />
                 <ThaliCard 
                   type="Special"
@@ -1290,7 +1421,10 @@ function MenuScreen({
                   description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice, Extra Item"
                   dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available && (i.thali_type === 'special' || i.thali_type === 'both')).map(i => i.name) || []}
                   gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available && (i.thali_type === 'special' || i.thali_type === 'both')).map(i => i.name) || []}
-                  onAdd={(item) => onAddToCart(item)}
+                  onAdd={(item) => onAddToCart(item, kitchen.id)}
+                  onUpdateQuantity={updateQuantity}
+                  cart={cart}
+                  kitchenId={kitchen.id}
                 />
               </>
             )}
@@ -1302,9 +1436,21 @@ function MenuScreen({
               {loading ? (
                 [1, 2, 3].map(i => <div key={i} className="h-16 skeleton w-full rounded-2xl" />)
               ) : localMenu.filter(i => i.category === 'others' && i.available).length > 0 ? (
-                localMenu.filter(i => i.category === 'others' && i.available).map(item => (
-                  <AddOnItem key={item.id} name={item.name} price={item.price} onAdd={(item) => onAddToCart(item)} />
-                ))
+                localMenu.filter(i => i.category === 'others' && i.available).map(item => {
+                  const cartItemId = `addon-${kitchen.id}-${item.id}`;
+                  const existingItem = cart.find(ci => ci.id === cartItemId);
+                  return (
+                    <AddOnItem 
+                      key={item.id} 
+                      name={item.name} 
+                      price={item.price} 
+                      onAdd={(item) => onAddToCart(item, kitchen.id)}
+                      onUpdateQuantity={updateQuantity}
+                      quantity={existingItem?.quantity || 0}
+                      cartItemId={cartItemId}
+                    />
+                  );
+                })
               ) : (
                 <div className="py-4 text-center opacity-30 font-bold uppercase text-[10px] tracking-widest italic">No extras available today</div>
               )}
@@ -1330,7 +1476,10 @@ function MenuScreen({
                 <div className="w-10 h-10 bg-white/20 border border-white/20 rounded-xl flex items-center justify-center font-display text-lg text-white">
                   {cartCount}
                 </div>
-                <div className="font-display text-lg tracking-wider">₹{cartTotal}</div>
+                <div>
+                  <div className="font-display text-lg tracking-wider leading-none text-white">₹{cartTotal}</div>
+                  <div className="text-[8px] font-black uppercase text-white/50 tracking-widest mt-0.5 truncate max-w-[120px]">{kitchen.name}</div>
+                </div>
               </div>
               <div className="flex flex-col items-end gap-0.5">
                 {!isLoggedIn && (
@@ -1358,14 +1507,20 @@ function ThaliCard({
   description,
   dryOptions,
   gravyOptions,
-  onAdd 
+  onAdd,
+  onUpdateQuantity,
+  cart,
+  kitchenId
 }: { 
   type: 'Normal' | 'Special';
   price: number; 
   description: string;
   dryOptions: string[];
   gravyOptions: string[];
-  onAdd: (item: CartItem) => void 
+  onAdd: (item: CartItem) => void;
+  onUpdateQuantity: (id: string, delta: number) => void;
+  cart: CartItem[];
+  kitchenId: string;
 }) {
   const [withRice, setWithRice] = useState(true);
   const [drySabji, setDrySabji] = useState(dryOptions[0] || 'Aloo Gobi');
@@ -1378,6 +1533,11 @@ function ThaliCard({
 
   const totalPrice = price;
   const rotiCount = withRice ? 3 : 5;
+
+  // Deterministic ID for this specific thali configuration
+  const cartItemId = `${type.toLowerCase()}-thali-${kitchenId}-${drySabji.toLowerCase().replace(/\s+/g, '-')}-${gravySabji.toLowerCase().replace(/\s+/g, '-')}-${withRice ? 'rice' : 'no-rice'}`;
+  const existingItem = cart.find(i => i.id === cartItemId);
+  const quantity = existingItem?.quantity || 0;
 
   return (
     <div className="funky-card p-6 space-y-6 relative border-b-8 border-primary/5">
@@ -1449,18 +1609,39 @@ function ThaliCard({
            </div>
         </div>
 
-        <button 
-          onClick={() => onAdd({ 
-            id: `${type.toLowerCase()}-thali-${Date.now()}`, 
-            name: `${type} Thali`, 
-            price: totalPrice, 
-            quantity: 1, 
-            options: { withRice, drySabji, gravySabji } 
-          })}
-          className="w-full funky-btn-secondary py-4"
-        >
-          Add to Bag
-        </button>
+        {quantity > 0 ? (
+          <div className="flex items-center justify-between bg-secondary text-white rounded-2xl p-1 shadow-lg h-[56px]">
+            <button 
+              onClick={() => onUpdateQuantity(cartItemId, -1)}
+              className="w-14 h-full flex items-center justify-center font-black text-2xl active:scale-90"
+            >
+              -
+            </button>
+            <div className="flex flex-col items-center justify-center">
+              <span className="font-display text-xl leading-none">{quantity}</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest opacity-60">In Bag</span>
+            </div>
+            <button 
+              onClick={() => onUpdateQuantity(cartItemId, 1)}
+              className="w-14 h-full flex items-center justify-center font-black text-2xl active:scale-90"
+            >
+              +
+            </button>
+          </div>
+        ) : (
+          <button 
+            onClick={() => onAdd({ 
+              id: cartItemId, 
+              name: `${type} Thali`, 
+              price: totalPrice, 
+              quantity: 1, 
+              options: { withRice, drySabji, gravySabji } 
+            })}
+            className="w-full funky-btn-secondary py-4"
+          >
+            Add to Bag
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1470,11 +1651,17 @@ function ThaliCard({
 function AddOnItem({ 
   name, 
   price, 
-  onAdd 
+  onAdd,
+  onUpdateQuantity,
+  quantity,
+  cartItemId
 }: { 
   name: string; 
   price: number; 
   onAdd: (item: CartItem) => void;
+  onUpdateQuantity: (id: string, delta: number) => void;
+  quantity: number;
+  cartItemId: string;
   key?: React.Key;
 }) {
   return (
@@ -1483,18 +1670,37 @@ function AddOnItem({
         <span className="font-display text-lg text-secondary">{name}</span>
         <span className="font-display text-primary">₹{price}</span>
       </div>
-      <button 
-        onClick={() => onAdd({ id: `addon-${name.toLowerCase().replace(' ', '-')}`, name, price, quantity: 1 })}
-        className="px-6 py-2 bg-secondary text-white rounded-xl font-display text-sm active:scale-95 transition-transform"
-      >
-        ADD
-      </button>
+
+      {quantity > 0 ? (
+        <div className="flex items-center gap-4 bg-secondary text-white rounded-xl px-4 py-2 shadow-md">
+          <button 
+            onClick={() => onUpdateQuantity(cartItemId, -1)}
+            className="w-6 h-6 flex items-center justify-center font-black text-lg active:scale-90"
+          >
+            -
+          </button>
+          <span className="font-display text-md min-w-[20px] text-center">{quantity}</span>
+          <button 
+            onClick={() => onUpdateQuantity(cartItemId, 1)}
+            className="w-6 h-6 flex items-center justify-center font-black text-lg active:scale-90"
+          >
+            +
+          </button>
+        </div>
+      ) : (
+        <button 
+          onClick={() => onAdd({ id: cartItemId, name, price, quantity: 1 })}
+          className="px-6 py-2 bg-secondary text-white rounded-xl font-display text-sm active:scale-95 transition-transform"
+        >
+          ADD
+        </button>
+      )}
     </div>
   );
 }
 
 // --- Success Screen ---
-function SuccessScreen({ summary, orderId }: { summary: CartItem[], orderId: string }) {
+function SuccessScreen({ summary, orderId, orderNo }: { summary: CartItem[], orderId: string, orderNo?: string }) {
   const navigate = useNavigate();
   const total = useMemo(() => summary.reduce((a, c) => a + (c.price * c.quantity), 0), [summary]);
 
@@ -1522,7 +1728,9 @@ function SuccessScreen({ summary, orderId }: { summary: CartItem[], orderId: str
 
       <div className="space-y-2">
         <h1 className="text-4xl font-display tracking-tight text-secondary">Aww Yeah!</h1>
-        <p className="font-bold text-slate-500 bg-white/50 px-4 py-1 rounded-full inline-block">Order #{orderId ? orderId.slice(0, 8) : '0003'}</p>
+        <p className="font-bold text-slate-500 bg-white/50 px-4 py-1 rounded-full inline-block">
+          Order {orderNo ? `#${orderNo}` : orderId ? `#${orderId.slice(0, 8)}` : '#0001'}
+        </p>
       </div>
 
       <div className="w-full funky-card p-6 space-y-4">
@@ -1547,6 +1755,204 @@ function SuccessScreen({ summary, orderId }: { summary: CartItem[], orderId: str
         </div>
       </div>
 
+      <div className="w-full space-y-3">
+        <button 
+          onClick={() => navigate('/orders')}
+          className="w-full funky-btn-primary h-14 flex items-center justify-center gap-2"
+        >
+          Track My Order
+          <Clock className="w-5 h-5" />
+        </button>
+        <button 
+          onClick={() => navigate('/')}
+          className="w-full h-14 rounded-2xl font-display text-secondary tracking-wider active:scale-95 transition-transform"
+        >
+          Back to Home
+        </button>
+      </div>
+
+    </motion.div>
+  );
+}
+
+// --- User Orders Screen ---
+function UserOrdersScreen({ currentUser, kitchens }: { currentUser: UserProfile | null, kitchens: Kitchen[] }) {
+  const navigate = useNavigate();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!currentUser) {
+      navigate('/');
+      return;
+    }
+
+    fetchOrders();
+
+    // Subscribe to real-time updates for user's orders
+    const channel = supabase
+      .channel('user-orders')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+          filter: `customer_phone=eq.${currentUser.phone}`
+        },
+        () => {
+          fetchOrders();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser]);
+
+  const fetchOrders = async () => {
+    if (!currentUser) return;
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('customer_phone', currentUser.phone)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      if (data) {
+        setOrders(data.map(o => ({
+          id: o.id,
+          dailyOrderNo: o.daily_order_no,
+          kitchen_id: o.kitchen_id,
+          customerName: o.customer_name,
+          customerPhone: o.customer_phone,
+          items: typeof o.items === 'string' ? JSON.parse(o.items) : o.items,
+          total: o.total,
+          status: o.status,
+          time: new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: new Date(o.created_at).getTime(),
+          address: o.address
+        })));
+      }
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStatusColor = (status: Order['status']) => {
+    switch (status) {
+      case 'pending': return 'text-yellow-500 bg-yellow-50';
+      case 'preparing': return 'text-blue-500 bg-blue-50';
+      case 'on-the-way': return 'text-purple-500 bg-purple-50';
+      case 'delivered': return 'text-green-500 bg-green-50';
+      case 'cancelled': return 'text-red-500 bg-red-50';
+      default: return 'text-slate-400 bg-slate-50';
+    }
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="flex-1 overflow-y-auto no-scrollbar bg-bg-app flex flex-col"
+    >
+      <header className="px-6 pt-8 pb-4 flex items-center gap-4 sticky top-0 bg-bg-app z-10">
+        <button onClick={() => navigate('/')} className="p-2 bg-white shadow-lg rounded-full text-secondary active:scale-90 transition-transform">
+          <ChevronLeft className="w-6 h-6" />
+        </button>
+        <h1 className="font-display text-2xl text-secondary">My Orders</h1>
+      </header>
+
+      <div className="flex-1 px-6 pb-20">
+        {loading ? (
+          <div className="space-y-4 pt-4">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-32 skeleton rounded-[32px] w-full" />
+            ))}
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+            <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-slate-300">
+              <ShoppingBag className="w-10 h-10" />
+            </div>
+            <div>
+              <p className="font-display text-xl text-secondary">No orders yet</p>
+              <p className="text-slate-400 font-bold text-sm">Delicious food is just a few clicks away!</p>
+            </div>
+            <button 
+              onClick={() => navigate('/')}
+              className="px-8 py-3 bg-primary text-white rounded-2xl font-display tracking-wider active:scale-95 transition-transform"
+            >
+              Order Now
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4 pt-4">
+            {orders.map(order => {
+              const kitchen = kitchens.find(k => k.id === order.kitchen_id);
+              return (
+                <div key={order.id} className="bg-white rounded-[32px] p-6 shadow-xl shadow-ink/5 border border-slate-100 flex flex-col gap-4">
+                  <div className="flex justify-between items-start">
+                    <div 
+                      onClick={() => kitchen && navigate(`/kitchen/${kitchen.slug}`)}
+                      className="flex gap-3 cursor-pointer group"
+                    >
+                      <div className="w-12 h-12 rounded-2xl overflow-hidden border border-slate-100 group-active:scale-95 transition-transform">
+                        <img src={kitchen?.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c'} className="w-full h-full object-cover" alt="kitchen" />
+                      </div>
+                      <div>
+                        <h3 className="font-display text-lg text-secondary leading-none mb-1 group-hover:text-primary transition-colors">{kitchen?.name || 'Kitchen'}</h3>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                          {order.dailyOrderNo ? `#${order.dailyOrderNo}` : `#${order.id.slice(0, 8)}`} • {order.time}
+                        </p>
+                      </div>
+                    </div>
+                    <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>
+                      {order.status.replace('-', ' ')}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {order.items.map((item, idx) => (
+                      <div key={idx} className="flex justify-between items-start text-sm">
+                        <div className="flex flex-col">
+                          <span className="text-slate-700 font-bold">{item.quantity} × {item.name}</span>
+                          {item.options && (
+                            <span className="text-[10px] font-medium text-slate-400 leading-tight mt-0.5">
+                              {[item.options.drySabji, item.options.gravySabji, item.options.withRice ? 'With Rice' : 'No Rice']
+                                .filter(Boolean)
+                                .join(' • ')}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-secondary font-display shrink-0 ml-4">₹{item.price * item.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pt-4 border-t border-dashed border-slate-100 flex justify-between items-center">
+                   <div className="flex flex-col">
+                      <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Amount Paid</span>
+                      <span className="text-xl font-display text-secondary leading-none">₹{order.total}</span>
+                   </div>
+                   {order.status === 'on-the-way' && (
+                     <div className="flex items-center gap-2 text-primary font-bold text-xs animate-pulse">
+                       <Clock className="w-4 h-4" />
+                       Arriving Soon
+                     </div>
+                   )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </motion.div>
   );
 }
@@ -1699,6 +2105,7 @@ function AdminScreen() {
 
   const mapOrder = (dbOrder: any): Order => ({
     id: dbOrder.id,
+    dailyOrderNo: dbOrder.daily_order_no,
     kitchen_id: dbOrder.kitchen_id,
     customerName: dbOrder.customer_name,
     customerPhone: dbOrder.customer_phone,
@@ -1713,6 +2120,15 @@ function AdminScreen() {
   const fetchAdminOrders = async (kitchenId: string) => {
     setIsOrdersLoading(true);
     try {
+      // 1. Cleanup old orders (older than 2 days)
+      const twoDaysAgoIso = new Date(Date.now() - (2 * 24 * 60 * 60 * 1000)).toISOString();
+      await supabase
+        .from('orders')
+        .delete()
+        .eq('kitchen_id', kitchenId)
+        .lt('created_at', twoDaysAgoIso);
+
+      // 2. Fetch current orders
       const { data, error } = await supabase
         .from('orders')
         .select('*')
@@ -1859,12 +2275,12 @@ function AdminScreen() {
 
   const twoDaysAgo = Date.now() - (2 * 24 * 60 * 60 * 1000);
   const historyOrders = orders.filter(o => {
-    const isHistory = o.status === 'delivered' && o.timestamp >= twoDaysAgo;
+    const isHistory = (o.status === 'delivered' || o.status === 'cancelled') && o.timestamp >= twoDaysAgo;
     if (!historySearch) return isHistory;
-    const searchMatch = o.id.includes(historySearch) || o.customerPhone.includes(historySearch);
+    const searchMatch = o.id.includes(historySearch) || o.customerPhone.includes(historySearch) || o.customerName.toLowerCase().includes(historySearch.toLowerCase());
     return isHistory && searchMatch;
   });
-  const activeOrders = orders.filter(o => o.status !== 'delivered');
+  const activeOrders = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled');
 
   const stats = useMemo(() => {
     const today = new Date().setHours(0,0,0,0);
@@ -2477,7 +2893,9 @@ function AdminOrderCard({ order, onUpdate, onView }: { order: Order, onUpdate: a
       <div className="flex justify-between items-start mb-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-             <span className="font-display text-xl text-secondary">#{order.id.slice(0, 8)}</span>
+             <span className="font-display text-xl text-secondary">
+               {order.dailyOrderNo ? `#${order.dailyOrderNo}` : `#${order.id.slice(0, 8)}`}
+             </span>
              <StatusBadge status={order.status} />
           </div>
           <div className="flex items-center gap-1.5 text-slate-400">
@@ -2525,6 +2943,17 @@ function AdminOrderCard({ order, onUpdate, onView }: { order: Order, onUpdate: a
             Mark Delivered
           </button>
         )}
+        {order.status === 'pending' && (
+          <button 
+            onClick={() => {
+              if (window.confirm("Cancel this order?")) onUpdate(order.id, 'cancelled');
+            }} 
+            className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center hover:bg-red-100 transition-colors shrink-0"
+            title="Cancel Order"
+          >
+            <Trash2 className="w-5 h-5" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2535,7 +2964,8 @@ function StatusBadge({ status }: { status: Order['status'] }) {
     pending: 'bg-yellow-100 text-yellow-700',
     preparing: 'bg-blue-100 text-blue-700',
     'on-the-way': 'bg-purple-100 text-purple-700',
-    delivered: 'bg-green-100 text-green-700'
+    delivered: 'bg-green-100 text-green-700',
+    cancelled: 'bg-red-100 text-red-700'
   };
   return (
     <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${styles[status]}`}>
@@ -2555,7 +2985,9 @@ function OrderDetailsSheet({ order, onClose, onUpdate }: { order: Order | null, 
              <div className="flex justify-between items-start">
                <div>
                  <h2 className="font-display text-3xl text-secondary">Order Details</h2>
-                 <p className="text-slate-400 font-bold">#{order.id.slice(0, 8)} • {order.time}</p>
+                 <p className="text-slate-400 font-bold">
+                  {order.dailyOrderNo ? `#${order.dailyOrderNo}` : `#${order.id.slice(0, 8)}`} • {order.time}
+                </p>
                </div>
                <button onClick={onClose} className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center transition-transform active:scale-95"><Plus className="rotate-45 text-slate-400" /></button>
              </div>
