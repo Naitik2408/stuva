@@ -24,8 +24,9 @@ import {
   LogOut,
   Menu as MenuIcon
 } from "lucide-react";
-import { useState, useMemo, useEffect, useRef, Key, ChangeEvent } from "react";
+import { useState, useMemo, useEffect, useRef, Key, ChangeEvent, useCallback } from "react";
 import React from "react";
+import Fuse from 'fuse.js';
 import { supabase } from "./lib/supabase";
 import OwnerPanel from "./components/OwnerPanel";
 import { 
@@ -283,19 +284,20 @@ function AppContent() {
     fetchKitchens();
   }, []);
 
-  const fetchKitchens = async () => {
+  const fetchKitchens = useCallback(async () => {
     setIsLoadingKitchens(true);
     try {
       const { data, error } = await supabase
         .from('kitchens')
-        .select('*')
-        .eq('is_active', true);
+        .select('*');
       
-      if (error) throw error;
+      if (error) {
+        handleSupabaseError(error, 'fetchKitchens');
+        throw error;
+      }
       
       if (data) {
         const now = new Date();
-        // Filter in-memory if the column exists, otherwise just show active ones
         const filteredData = data.filter(k => {
           if (!k.subscription_expires_at) return true;
           return new Date(k.subscription_expires_at) > now;
@@ -309,7 +311,7 @@ function AppContent() {
           deliveryTime: k.delivery_time,
           description: k.description,
           image: k.image_url,
-          isOpen: k.is_active ?? true // Use is_active as the master status
+          isOpen: k.is_active ?? true
         })));
       }
     } catch (err) {
@@ -317,7 +319,37 @@ function AppContent() {
     } finally {
       setIsLoadingKitchens(false);
     }
-  };
+  }, []);
+
+  // Real-time Kitchen Updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('kitchen-status-updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'kitchens' },
+        (payload) => {
+          console.log('Real-time kitchen change:', payload);
+          if (payload.eventType === 'UPDATE') {
+            const updatedKitchen = payload.new;
+            setKitchens(prev => prev.map(k => 
+              k.id === updatedKitchen.id 
+                ? { ...k, isOpen: updatedKitchen.is_active ?? true, name: updatedKitchen.name, description: updatedKitchen.description, image: updatedKitchen.image_url } 
+                : k
+            ));
+          } else if (payload.eventType === 'INSERT') {
+            fetchKitchens();
+          } else if (payload.eventType === 'DELETE') {
+            setKitchens(prev => prev.filter(k => k.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchKitchens]);
 
   // Security: Rate limiting & Expiry
   const [otpAttempts, setOtpAttempts] = useState(0);
@@ -577,7 +609,7 @@ function AppContent() {
         .single();
 
       if (error) {
-        console.error("Supabase insert error:", error);
+        handleSupabaseError(error, 'finalPlaceOrder');
         throw error;
       }
 
@@ -616,15 +648,11 @@ function AppContent() {
     }
   };
 
-  const addToCart = (item: CartItem, kitchenId: string) => {
+  const addToCart = useCallback((item: CartItem, kitchenId: string) => {
     setCart(prev => {
-      // If adding from a different kitchen, we could either clear and add, or reject
-      // For best UX, if it's the first item, we set the activeKitchenId
       if (prev.length === 0) {
         setActiveKitchenId(kitchenId);
       } else if (activeKitchenId && activeKitchenId !== kitchenId) {
-        // This shouldn't happen if we add UI guards, but as a fallback:
-        // We warn or just clear. Let's stick with the single kitchen rule.
         if (window.confirm("Your cart contains items from another kitchen. Clear cart to add this item?")) {
           setActiveKitchenId(kitchenId);
           return [item];
@@ -638,9 +666,9 @@ function AppContent() {
       }
       return [...prev, item];
     });
-  };
+  }, [activeKitchenId]);
 
-  const updateQuantity = (id: string, delta: number) => {
+  const updateQuantity = useCallback((id: string, delta: number) => {
     setCart(prev => {
       return prev.map(i => {
         if (i.id === id) {
@@ -650,7 +678,7 @@ function AppContent() {
         return i;
       }).filter(i => i.quantity > 0);
     });
-  };
+  }, []);
 
   const cartTotal = useMemo(() => cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0), [cart]);
 
@@ -661,7 +689,7 @@ function AppContent() {
   };
 
   if (location.pathname.startsWith('/owner')) {
-    return <OwnerPanel />;
+    return <OwnerPanel setKitchens={setKitchens} />;
   }
 
   return (
@@ -701,7 +729,7 @@ function AppContent() {
             >
               <Routes location={location}>
                 <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} kitchens={kitchens} currentUser={currentUser} isLoading={isLoadingKitchens} onLogout={handleLogout} />} />
-                <Route path="/admin" element={<AdminScreen />} />
+                <Route path="/admin" element={<AdminScreen setKitchens={setKitchens} />} />
                   <Route path="/kitchen/:slug" 
                     element={
                       <MenuScreen 
@@ -1078,15 +1106,40 @@ function SearchBar() {
 }
 
 // --- Home Screen ---
+// Security & Utility: Robust error handling for database operations
+const handleSupabaseError = (error: any, context: string) => {
+  const errorInfo = {
+    error: error.message || String(error),
+    code: error.code,
+    context,
+    timestamp: new Date().toISOString(),
+    auth: !!supabase.auth.getSession()
+  };
+  console.error(`[Security/DB Error] ${context}:`, JSON.stringify(errorInfo));
+  return errorInfo;
+};
+
+// Memoized Components for Performance
+const MemoKitchenCard = React.memo(KitchenCard);
+const MemoKitchenSkeleton = React.memo(KitchenSkeleton);
+
 function HomeScreen({ isLoggedIn, kitchens, currentUser, isLoading, onLogout }: { isLoggedIn: boolean, kitchens: Kitchen[], currentUser: UserProfile | null, isLoading: boolean, onLogout: () => void }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const query = searchParams.get('q')?.toLowerCase() || '';
+  const query = searchParams.get('q') || '';
 
-  const filteredKitchens = kitchens.filter(k => {
-    const matchesQuery = !query || k.name.toLowerCase().includes(query) || k.description.toLowerCase().includes(query);
-    return matchesQuery;
-  });
+  // Fuzzy Search Implementation
+  const filteredKitchens = useMemo(() => {
+    if (!query) return kitchens;
+    
+    const fuse = new Fuse(kitchens, {
+      keys: ['name', 'description'],
+      threshold: 0.4,
+      distance: 100
+    });
+    
+    return fuse.search(query).map(result => result.item);
+  }, [kitchens, query]);
 
   return (
     <motion.div 
@@ -1135,13 +1188,17 @@ function HomeScreen({ isLoggedIn, kitchens, currentUser, isLoading, onLogout }: 
             </div>
             <div className="px-6 grid grid-cols-2 gap-4 pb-12">
               {isLoading ? (
-                [1,2,3,4,5,6].map(i => <KitchenSkeleton key={i} />)
+                [1,2,3,4,5,6].map(i => <MemoKitchenSkeleton key={i} />)
               ) : filteredKitchens.length > 0 ? (
                 filteredKitchens.map(kitchen => (
-                  <KitchenCard 
+                  <MemoKitchenCard 
                     key={kitchen.id} 
                     kitchen={kitchen} 
-                    onClick={() => navigate(`/kitchen/${kitchen.slug}`)} 
+                    onClick={() => {
+                      if (kitchen.isOpen !== false) {
+                        navigate(`/kitchen/${kitchen.slug}`);
+                      }
+                    }} 
                   />
                 ))
               ) : (
@@ -1183,10 +1240,18 @@ function HomeScreen({ isLoggedIn, kitchens, currentUser, isLoading, onLogout }: 
               
               <div className="grid grid-cols-2 gap-4">
                 {isLoading ? (
-                  [1,2,3,4].map(i => <KitchenSkeleton key={i} />)
+                  [1,2,3,4].map(i => <MemoKitchenSkeleton key={i} />)
                 ) : filteredKitchens.length > 0 ? (
                   filteredKitchens.map(kitchen => (
-                    <KitchenCard key={kitchen.id} kitchen={kitchen} onClick={() => navigate(`/kitchen/${kitchen.slug}`)} />
+                    <MemoKitchenCard 
+                      key={kitchen.id} 
+                      kitchen={kitchen} 
+                      onClick={() => {
+                        if (kitchen.isOpen !== false) {
+                          navigate(`/kitchen/${kitchen.slug}`);
+                        }
+                      }} 
+                    />
                   ))
                 ) : (
                   <div className="col-span-2 py-10 text-center opacity-50 font-bold">No kitchens found...</div>
@@ -1253,8 +1318,8 @@ function KitchenCard({ kitchen, onClick }: { kitchen: Kitchen, onClick: () => vo
   return (
     <motion.div 
       whileTap={isClosed ? {} : { scale: 0.96 }}
-      onClick={isClosed ? undefined : onClick}
-      className={`funky-card overflow-hidden flex flex-col group transition-all duration-300 ${isClosed ? 'opacity-70 grayscale-[0.3] cursor-not-allowed shadow-none border-slate-100' : 'cursor-pointer'}`}
+      onClick={onClick}
+      className={`funky-card overflow-hidden flex flex-col group transition-all duration-300 ${isClosed ? 'grayscale-[0.3] opacity-90 cursor-default' : 'cursor-pointer'}`}
     >
       <div className="relative h-40 overflow-hidden">
         <img 
@@ -1283,6 +1348,10 @@ function KitchenCard({ kitchen, onClick }: { kitchen: Kitchen, onClick: () => vo
     </motion.div>
   );
 }
+
+// --- Memoized UI Components ---
+const MemoThaliCard = React.memo(ThaliCard);
+const MemoAddOnItem = React.memo(AddOnItem);
 
 // --- Menu Screen ---
 function MenuScreen({ 
@@ -1406,6 +1475,12 @@ function MenuScreen({
         )}
       </header>
 
+      {isClosed && (
+        <div className="bg-red-500 text-white text-center py-2 text-[10px] uppercase font-black tracking-[0.2em] sticky top-[72px] z-40 shadow-lg">
+          Currently not accepting orders
+        </div>
+      )}
+
       {/* Hero Section */}
       <div className="relative h-[45vh] flex-shrink-0">
         <img 
@@ -1454,27 +1529,29 @@ function MenuScreen({
               [1, 2].map(i => <MenuItemSkeleton key={i} />)
             ) : (
               <>
-                <ThaliCard 
+                <MemoThaliCard 
                   type="Normal"
                   price={localMenu.find(i => i.name.toLowerCase().trim() === 'normal thali')?.price || 70} 
                   description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice"
                   dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available && (i.thali_type === 'normal' || i.thali_type === 'both')).map(i => i.name) || []}
                   gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available && (i.thali_type === 'normal' || i.thali_type === 'both')).map(i => i.name) || []}
-                  onAdd={(item) => onAddToCart(item, kitchen.id)}
+                  onAdd={(item) => !isClosed && onAddToCart(item, kitchen.id)}
                   onUpdateQuantity={updateQuantity}
                   cart={cart}
                   kitchenId={kitchen.id}
+                  disabled={isClosed}
                 />
-                <ThaliCard 
+                <MemoThaliCard 
                   type="Special"
                   price={localMenu.find(i => i.name.toLowerCase().trim() === 'special thali')?.price || 80} 
                   description="3 Roti, 1 Dry Sabji, 1 Gravy Sabji, Rice, Extra Item"
                   dryOptions={localMenu.filter(i => i.category === 'dry_sabji' && i.available && (i.thali_type === 'special' || i.thali_type === 'both')).map(i => i.name) || []}
                   gravyOptions={localMenu.filter(i => i.category === 'gravy_sabji' && i.available && (i.thali_type === 'special' || i.thali_type === 'both')).map(i => i.name) || []}
-                  onAdd={(item) => onAddToCart(item, kitchen.id)}
+                  onAdd={(item) => !isClosed && onAddToCart(item, kitchen.id)}
                   onUpdateQuantity={updateQuantity}
                   cart={cart}
                   kitchenId={kitchen.id}
+                  disabled={isClosed}
                 />
               </>
             )}
@@ -1490,14 +1567,15 @@ function MenuScreen({
                   const cartItemId = `addon-${kitchen.id}-${item.id}`;
                   const existingItem = cart.find(ci => ci.id === cartItemId);
                   return (
-                    <AddOnItem 
+                    <MemoAddOnItem 
                       key={item.id} 
                       name={item.name} 
                       price={item.price} 
-                      onAdd={(item) => onAddToCart(item, kitchen.id)}
+                      onAdd={(item) => !isClosed && onAddToCart(item, kitchen.id)}
                       onUpdateQuantity={updateQuantity}
                       quantity={existingItem?.quantity || 0}
                       cartItemId={cartItemId}
+                      disabled={isClosed}
                     />
                   );
                 })
@@ -1560,7 +1638,8 @@ function ThaliCard({
   onAdd,
   onUpdateQuantity,
   cart,
-  kitchenId
+  kitchenId,
+  disabled
 }: { 
   type: 'Normal' | 'Special';
   price: number; 
@@ -1571,6 +1650,7 @@ function ThaliCard({
   onUpdateQuantity: (id: string, delta: number) => void;
   cart: CartItem[];
   kitchenId: string;
+  disabled?: boolean;
 }) {
   const [withRice, setWithRice] = useState(true);
   const [drySabji, setDrySabji] = useState(dryOptions[0] || 'Aloo Gobi');
@@ -1680,16 +1760,17 @@ function ThaliCard({
           </div>
         ) : (
           <button 
-            onClick={() => onAdd({ 
+            onClick={() => !disabled && onAdd({ 
               id: cartItemId, 
               name: `${type} Thali`, 
               price: totalPrice, 
               quantity: 1, 
               options: { withRice, drySabji, gravySabji } 
             })}
-            className="w-full funky-btn-secondary py-4"
+            disabled={disabled}
+            className={`w-full py-4 transition-all ${disabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed rounded-2xl font-display text-lg tracking-widest uppercase opacity-50' : 'funky-btn-secondary'}`}
           >
-            Add to Bag
+            {disabled ? 'CLOSED' : 'Add to Bag'}
           </button>
         )}
       </div>
@@ -1704,7 +1785,8 @@ function AddOnItem({
   onAdd,
   onUpdateQuantity,
   quantity,
-  cartItemId
+  cartItemId,
+  disabled
 }: { 
   name: string; 
   price: number; 
@@ -1712,16 +1794,17 @@ function AddOnItem({
   onUpdateQuantity: (id: string, delta: number) => void;
   quantity: number;
   cartItemId: string;
+  disabled?: boolean;
   key?: React.Key;
 }) {
   return (
-    <div className="funky-card p-4 flex items-center justify-between border-b-4 border-slate-50">
+    <div className={`funky-card p-4 flex items-center justify-between border-b-4 border-slate-50 transition-all ${disabled ? 'opacity-50 grayscale select-none' : ''}`}>
       <div className="flex flex-col">
-        <span className="font-display text-lg text-secondary">{name}</span>
-        <span className="font-display text-primary">₹{price}</span>
+        <span className="font-display text-lg text-secondary leading-tight">{name}</span>
+        <span className="font-display text-primary mt-0.5">₹{price}</span>
       </div>
 
-      {quantity > 0 ? (
+      {quantity > 0 && !disabled ? (
         <div className="flex items-center gap-4 bg-secondary text-white rounded-xl px-4 py-2 shadow-md">
           <button 
             onClick={() => onUpdateQuantity(cartItemId, -1)}
@@ -1739,10 +1822,11 @@ function AddOnItem({
         </div>
       ) : (
         <button 
-          onClick={() => onAdd({ id: cartItemId, name, price, quantity: 1 })}
-          className="px-6 py-2 bg-secondary text-white rounded-xl font-display text-sm active:scale-95 transition-transform"
+          onClick={() => !disabled && onAdd({ id: cartItemId, name, price, quantity: 1 })}
+          disabled={disabled}
+          className={`px-6 py-2 rounded-xl font-display text-sm transition-transform active:scale-95 ${disabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-50' : 'bg-secondary text-white'}`}
         >
-          ADD
+          {disabled ? 'CLOSED' : 'ADD'}
         </button>
       )}
     </div>
@@ -2049,7 +2133,7 @@ function HistoryOrderCard({ order, onView }: HistoryOrderCardProps) {
   );
 }
 
-function AdminScreen() {
+function AdminScreen({ setKitchens }: { setKitchens: React.Dispatch<React.SetStateAction<Kitchen[]>> }) {
   const navigate = useNavigate();
   const [adminStep, setAdminStep] = useState<'PHONE' | 'OTP' | 'DASHBOARD'>(() => {
     const saved = localStorage.getItem('kitchen_admin_authenticated');
@@ -2363,6 +2447,8 @@ function AdminScreen() {
         throw error;
       }
       setIsKitchenOpen(newStatus);
+      // Update global kitchens status for immediate UI feedback
+      setKitchens(prev => prev.map(k => k.id === currentKitchenId ? { ...k, isOpen: newStatus } : k));
     } catch (err) {
       console.error('Error toggling kitchen status:', err);
     } finally {

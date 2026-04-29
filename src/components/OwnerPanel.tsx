@@ -31,7 +31,7 @@ interface Kitchen {
   subscription_expires_at?: string;
 }
 
-export default function OwnerPanel() {
+export default function OwnerPanel({ setKitchens: setGlobalKitchens }: { setKitchens?: any }) {
   const [authStep, setAuthStep] = useState<'PHONE' | 'OTP' | 'DASHBOARD'>('PHONE');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState(['', '', '', '']);
@@ -162,6 +162,9 @@ export default function OwnerPanel() {
         .eq('id', id);
       
       if (error) throw error;
+      if (setGlobalKitchens) {
+        setGlobalKitchens((prev: any[]) => prev.map((k: any) => k.id === id ? { ...k, isOpen: !currentStatus } : k));
+      }
       fetchKitchens();
     } catch (err) {
       console.error('Error toggling kitchen status:', err);
@@ -182,6 +185,9 @@ export default function OwnerPanel() {
         }
         throw error;
       };
+      if (setGlobalKitchens) {
+        setGlobalKitchens((prev: any[]) => prev.map((k: any) => k.id === id ? { ...k, isOpen: !currentStatus } : k));
+      }
       fetchKitchens();
     } catch (err) {
       console.error('Error toggling kitchen open status:', err);
