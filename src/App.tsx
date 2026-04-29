@@ -18,7 +18,10 @@ import {
   User,
   Search,
   Heart,
+  Store,
+  RefreshCw,
   Trash2,
+  LogOut,
   Menu as MenuIcon
 } from "lucide-react";
 import { useState, useMemo, useEffect, useRef, Key, ChangeEvent } from "react";
@@ -45,6 +48,7 @@ interface Kitchen {
   description: string;
   image: string;
   menu?: MenuItem[];
+  isOpen?: boolean;
 }
 
 interface MenuItem {
@@ -304,7 +308,8 @@ function AppContent() {
           rating: k.rating,
           deliveryTime: k.delivery_time,
           description: k.description,
-          image: k.image_url
+          image: k.image_url,
+          isOpen: k.is_open ?? true // Default to true if column missing or null
         })));
       }
     } catch (err) {
@@ -596,6 +601,21 @@ function AppContent() {
     }
   };
 
+  const handleLogout = () => {
+    if (window.confirm("Are you sure you want to logout?")) {
+      localStorage.removeItem('stuva_auth_phone');
+      setIsLoggedIn(false);
+      setCurrentUser(null);
+      setUserAddress(null);
+      // Optional: Clear cart on logout
+      setCart([]);
+      setActiveKitchenId(null);
+      localStorage.removeItem('stuva_cart');
+      localStorage.removeItem('stuva_cart_kitchen_id');
+      navigate('/');
+    }
+  };
+
   const addToCart = (item: CartItem, kitchenId: string) => {
     setCart(prev => {
       // If adding from a different kitchen, we could either clear and add, or reject
@@ -680,7 +700,7 @@ function AppContent() {
               exit={{ opacity: 0 }}
             >
               <Routes location={location}>
-                <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} kitchens={kitchens} currentUser={currentUser} isLoading={isLoadingKitchens} />} />
+                <Route path="/" element={<HomeScreen isLoggedIn={isLoggedIn} kitchens={kitchens} currentUser={currentUser} isLoading={isLoadingKitchens} onLogout={handleLogout} />} />
                 <Route path="/admin" element={<AdminScreen />} />
                   <Route path="/kitchen/:slug" 
                     element={
@@ -691,10 +711,12 @@ function AppContent() {
                         updateQuantity={updateQuantity}
                         onCheckout={(kitchenId) => handleCheckoutClick(kitchenId)}
                         isLoggedIn={isLoggedIn}
+                        onLogout={handleLogout}
+                        currentUser={currentUser}
                       />
                     } 
                   />
-                <Route path="/orders" element={<UserOrdersScreen currentUser={currentUser} kitchens={kitchens} />} />
+                <Route path="/orders" element={<UserOrdersScreen currentUser={currentUser} kitchens={kitchens} onLogout={handleLogout} />} />
                 <Route path="/success" element={<SuccessScreen summary={orderSummary} orderId={placedOrderId} orderNo={placedOrderNo} />} />
               </Routes>
             </motion.div>
@@ -1056,7 +1078,7 @@ function SearchBar() {
 }
 
 // --- Home Screen ---
-function HomeScreen({ isLoggedIn, kitchens, currentUser, isLoading }: { isLoggedIn: boolean, kitchens: Kitchen[], currentUser: UserProfile | null, isLoading: boolean }) {
+function HomeScreen({ isLoggedIn, kitchens, currentUser, isLoading, onLogout }: { isLoggedIn: boolean, kitchens: Kitchen[], currentUser: UserProfile | null, isLoading: boolean, onLogout: () => void }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const query = searchParams.get('q')?.toLowerCase() || '';
@@ -1088,14 +1110,13 @@ function HomeScreen({ isLoggedIn, kitchens, currentUser, isLoading }: { isLogged
               </div>
             </div>
 
-            <button 
-              onClick={() => navigate('/admin')}
-              className="w-12 h-12 bg-white shadow-xl shadow-ink/5 rounded-2xl flex items-center justify-center border border-slate-50 active:scale-90 transition-transform"
+            <div 
+              className="w-12 h-12 bg-white shadow-xl shadow-ink/5 rounded-2xl flex items-center justify-center border border-slate-50"
             >
               <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                 <User className="w-5 h-5 text-primary" />
               </div>
-            </button>
+            </div>
           </header>
 
           <div className="px-6 space-y-2 mb-2">
@@ -1148,10 +1169,14 @@ function HomeScreen({ isLoggedIn, kitchens, currentUser, isLoading }: { isLogged
                 <Clock className="w-5 h-5 text-secondary" />
               </button>
               <div 
-                onClick={() => navigate('/admin')}
-                className="w-12 h-12 rounded-2xl bg-white border-2 border-primary/20 p-1 shadow-sm cursor-pointer active:scale-95 transition-transform"
+                onClick={onLogout}
+                className="w-12 h-12 rounded-2xl bg-white border-2 border-primary/20 p-1 shadow-sm cursor-pointer active:scale-95 transition-transform group relative"
+                title="Logout"
               >
                 <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.name || 'Felix'}`} className="w-full h-full rounded-xl" alt="profile" />
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full border-2 border-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                   <LogOut className="w-2.5 h-2.5 text-white" />
+                </div>
               </div>
             </div>
           </header>
@@ -1233,24 +1258,41 @@ function OrderCardSkeleton() {
 
 // --- Kitchen Card ---
 function KitchenCard({ kitchen, onClick }: { kitchen: Kitchen, onClick: () => void, key?: any }) {
+  const isClosed = kitchen.isOpen === false;
+  
   return (
     <motion.div 
-      whileTap={{ scale: 0.96 }}
-      onClick={onClick}
-      className="funky-card overflow-hidden flex flex-col group cursor-pointer"
+      whileTap={isClosed ? {} : { scale: 0.96 }}
+      onClick={isClosed ? undefined : onClick}
+      className={`funky-card overflow-hidden flex flex-col group transition-all duration-300 ${isClosed ? 'opacity-70 grayscale-[0.3] cursor-not-allowed shadow-none border-slate-100' : 'cursor-pointer'}`}
     >
       <div className="relative h-40 overflow-hidden">
         <img 
           src={kitchen.image} 
           alt={kitchen.name} 
-          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+          className={`w-full h-full object-cover transition-transform duration-500 ${!isClosed && 'group-hover:scale-110'}`}
           referrerPolicy="no-referrer"
         />
+        {isClosed && (
+          <div className="absolute inset-0 bg-secondary/20 backdrop-blur-[2px] flex items-center justify-center">
+            <div className="bg-red-500 text-white px-4 py-1.5 rounded-full font-display text-[10px] tracking-widest uppercase shadow-lg shadow-red-500/20 -rotate-6">
+              Shop Closed
+            </div>
+          </div>
+        )}
       </div>
       
       <div className="flex-1 flex flex-col">
         <div className="p-3 flex-1 pb-4">
-          <h3 className="font-display text-[15px] text-primary group-hover:text-ink transition-colors leading-tight">{kitchen.name}</h3>
+          <div className="flex justify-between items-start gap-2">
+            <h3 className={`font-display text-[15px] transition-colors leading-tight ${isClosed ? 'text-slate-400' : 'text-primary group-hover:text-ink'}`}>{kitchen.name}</h3>
+            {!isClosed && kitchen.rating && (
+              <div className="flex items-center gap-0.5 text-amber-500">
+                <Star className="w-3 h-3 fill-current" />
+                <span className="text-[10px] font-black">{kitchen.rating}</span>
+              </div>
+            )}
+          </div>
           <p className="text-[10px] text-slate-400 font-medium mt-1 line-clamp-1">{kitchen.description}</p>
         </div>
       </div>
@@ -1265,7 +1307,9 @@ function MenuScreen({
   cart, 
   updateQuantity,
   onCheckout,
-  isLoggedIn
+  isLoggedIn,
+  onLogout,
+  currentUser
 }: { 
   kitchens: Kitchen[];
   onAddToCart: (item: CartItem, kitchenId: string) => void;
@@ -1273,6 +1317,8 @@ function MenuScreen({
   updateQuantity: (id: string, delta: number) => void;
   onCheckout: (kitchenId: string) => void;
   isLoggedIn: boolean;
+  onLogout: () => void;
+  currentUser: UserProfile | null;
 }) {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -1329,6 +1375,7 @@ function MenuScreen({
 
   const cartTotal = useMemo(() => cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0), [cart]);
   const cartCount = useMemo(() => cart.reduce((acc, curr) => acc + curr.quantity, 0), [cart]);
+  const isClosed = kitchen.isOpen === false;
 
   if (!kitchen) {
     return (
@@ -1362,12 +1409,24 @@ function MenuScreen({
           </motion.h2>
         )}
         {isLoggedIn ? (
-          <button 
-            onClick={() => navigate('/orders')}
-            className="w-10 h-10 bg-white shadow-lg rounded-xl flex items-center justify-center text-secondary active:scale-90 transition-transform border border-slate-100"
-          >
-            <Clock className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => navigate('/orders')}
+              className="w-10 h-10 bg-white shadow-lg rounded-xl flex items-center justify-center text-secondary active:scale-90 transition-transform border border-slate-100"
+            >
+              <Clock className="w-5 h-5" />
+            </button>
+            <div 
+              onClick={onLogout}
+              className="w-10 h-10 rounded-xl bg-white border-2 border-primary/20 p-0.5 shadow-sm cursor-pointer active:scale-95 transition-transform group relative"
+              title="Logout"
+            >
+              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.name || 'Felix'}`} className="w-full h-full rounded-lg" alt="profile" />
+              <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                 <LogOut className="w-2 h-2 text-white" />
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="w-10" />
         )}
@@ -1385,15 +1444,32 @@ function MenuScreen({
       </div>
 
       <div className="px-6 -mt-16 relative z-10 space-y-8 pb-32">
-        <div className="bg-white p-6 rounded-[32px] shadow-xl shadow-ink/5 space-y-2 border-b-4 border-slate-100">
+        <div className="bg-white p-6 rounded-[32px] shadow-xl shadow-ink/5 space-y-2 border-b-4 border-slate-100 relative overflow-hidden">
+          {isClosed && (
+            <div className="absolute top-0 right-0 p-4">
+              <span className="bg-red-50 text-red-500 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-red-100">Offline</span>
+            </div>
+          )}
           <h1 className="st-title text-3xl">{kitchen.name}</h1>
           <p className="text-[13px] text-slate-500 font-medium leading-relaxed">
             {kitchen.description}
           </p>
         </div>
 
+        {isClosed && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="p-6 bg-red-50 border-2 border-red-100 rounded-[32px] flex flex-col items-center text-center gap-2"
+          >
+            <Clock className="w-8 h-8 text-red-400 mb-2" />
+            <h3 className="font-display text-xl text-red-600">Kitchen is Closed</h3>
+            <p className="text-red-400 font-bold text-xs uppercase tracking-widest leading-relaxed">We apologize, but this kitchen isn't taking orders right now. Please check back later!</p>
+          </motion.div>
+        )}
+
         {/* Section: Menu Items */}
-        <div className="space-y-6">
+        <div className={`space-y-6 ${isClosed ? 'opacity-50 pointer-events-none grayscale-[0.5]' : ''}`}>
           <div className="space-y-1">
             <p className="text-[10px] font-black text-primary uppercase tracking-widest px-1">Menu</p>
             <h2 className="font-display text-2xl text-secondary">Our Specialties</h2>
@@ -1776,7 +1852,7 @@ function SuccessScreen({ summary, orderId, orderNo }: { summary: CartItem[], ord
 }
 
 // --- User Orders Screen ---
-function UserOrdersScreen({ currentUser, kitchens }: { currentUser: UserProfile | null, kitchens: Kitchen[] }) {
+function UserOrdersScreen({ currentUser, kitchens, onLogout }: { currentUser: UserProfile | null, kitchens: Kitchen[], onLogout: () => void }) {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1892,7 +1968,7 @@ function UserOrdersScreen({ currentUser, kitchens }: { currentUser: UserProfile 
             </button>
           </div>
         ) : (
-          <div className="space-y-4 pt-4">
+          <div className="space-y-4 pt-4 pb-10">
             {orders.map(order => {
               const kitchen = kitchens.find(k => k.id === order.kitchen_id);
               return (
@@ -1950,6 +2026,13 @@ function UserOrdersScreen({ currentUser, kitchens }: { currentUser: UserProfile 
                 </div>
               );
             })}
+
+            <button 
+              onClick={onLogout}
+              className="w-full py-4 mt-4 bg-white border-2 border-red-50 text-red-500 rounded-[28px] font-display tracking-widest text-sm active:scale-95 transition-transform shadow-sm"
+            >
+              LOGOUT ACCOUNT
+            </button>
           </div>
         )}
       </div>
@@ -1958,6 +2041,40 @@ function UserOrdersScreen({ currentUser, kitchens }: { currentUser: UserProfile 
 }
 
 // --- Admin Section ---
+// Helper Components for Admin Screen
+interface HistoryOrderCardProps {
+  order: Order;
+  onView: (order: Order) => void;
+  key?: React.Key;
+}
+
+function HistoryOrderCard({ order, onView }: HistoryOrderCardProps) {
+  return (
+    <div className="bg-white border-2 border-slate-50 p-4 rounded-2xl opacity-80 grayscale-[0.3] hover:grayscale-0 transition-all">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest flex items-center gap-1 mb-1">
+            <Clock className="w-2.5 h-2.5" /> {order.time}
+          </p>
+          <h4 className="font-display text-lg text-secondary leading-tight">
+            {order.dailyOrderNo ? `#${order.dailyOrderNo}` : `#${order.id.slice(0, 8)}`}
+          </h4>
+          <p className="text-[10px] font-bold text-slate-500">{order.customerName}</p>
+        </div>
+        <div className="text-right">
+          <p className="font-display text-primary text-xl leading-none mb-1 text-slate-400">₹{order.total}</p>
+          <button 
+            onClick={() => onView(order)} 
+            className="text-[9px] font-black text-secondary uppercase tracking-widest hover:underline px-2 py-1 bg-slate-50 rounded-lg"
+          >
+            Details
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminScreen() {
   const navigate = useNavigate();
   const [adminStep, setAdminStep] = useState<'PHONE' | 'OTP' | 'DASHBOARD'>(() => {
@@ -1978,6 +2095,8 @@ function AdminScreen() {
   const [showAdminMenu, setShowAdminMenu] = useState(false);
   const [showAddItemForm, setShowAddItemForm] = useState(false);
   const [isMenuLoading, setIsMenuLoading] = useState(false);
+  const [isKitchenOpen, setIsKitchenOpen] = useState(true);
+  const [isStatusUpdating, setIsStatusUpdating] = useState(false);
 
   useEffect(() => {
     if (adminStep === 'DASHBOARD') {
@@ -2153,20 +2272,52 @@ function AdminScreen() {
   }, [adminStep]);
 
   const fetchAdminContext = async () => {
+    if (!adminPhone) return;
     try {
-      // 1. Get kitchen ID for this phone
-      const { data: adminData } = await supabase
+      const cleanPhone = adminPhone.slice(-10);
+      
+      // 1. Try to get kitchen ID for this phone with is_open
+      let data: any[] | null = null;
+      let error: any = null;
+      
+      const result = await supabase
         .from('kitchen_admins')
-        .select('kitchen_id, kitchens(name)')
-        .eq('phone', adminPhone)
-        .single();
+        .select('kitchen_id, phone, kitchens(name, is_open)');
+      
+      data = result.data;
+      error = result.error;
+      
+      // If error suggests missing column, fallback to just name
+      if (error && (error.message.includes('is_open') || error.code === '42703')) {
+        const fallback = await supabase
+          .from('kitchen_admins')
+          .select('kitchen_id, phone, kitchens(name)');
+        data = fallback.data;
+        error = fallback.error;
+      }
+      
+      if (error) throw error;
+      
+      // Manual filter for phone to handle different storage formats (+91 prefix etc)
+      const adminData = data?.find(a => {
+        const dbPhone = String(a.phone || '').replace(/\D/g, '');
+        return dbPhone.endsWith(cleanPhone);
+      });
       
       if (adminData) {
         setCurrentKitchenId(adminData.kitchen_id);
         if (adminData.kitchens) {
-          setCurrentKitchenName((adminData.kitchens as any).name);
+          const k = Array.isArray(adminData.kitchens) ? adminData.kitchens[0] : adminData.kitchens;
+          if (k) {
+            setCurrentKitchenName(k.name);
+            setIsKitchenOpen((k as any).is_open ?? true);
+          }
         }
         fetchAdminMenuItems(adminData.kitchen_id);
+        fetchAdminOrders(adminData.kitchen_id);
+      } else {
+        console.error('No admin found for matched phone');
+        setError("Admin access failed. Please re-login.");
       }
     } catch (err) {
       console.error('Error fetching admin context:', err);
@@ -2194,6 +2345,32 @@ function AdminScreen() {
       console.error('Error fetching menu:', err);
     } finally {
       setIsMenuLoading(false);
+    }
+  };
+
+  const toggleKitchenStatus = async () => {
+    if (!currentKitchenId || isStatusUpdating) return;
+    setIsStatusUpdating(true);
+    try {
+      const newStatus = !isKitchenOpen;
+      const { error } = await supabase
+        .from('kitchens')
+        .update({ is_open: newStatus })
+        .eq('id', currentKitchenId);
+      
+      if (error) {
+        if (error.code === '42703' || error.message.includes('is_open')) {
+          alert("Database Error: The 'is_open' column is missing in your kitchens table. Please add it to enable this feature.");
+          return;
+        }
+        throw error;
+      }
+      setIsKitchenOpen(newStatus);
+    } catch (err) {
+      console.error('Error toggling kitchen status:', err);
+      setError("Failed to update kitchen status.");
+    } finally {
+      setIsStatusUpdating(false);
     }
   };
 
@@ -2273,18 +2450,51 @@ function AdminScreen() {
     }
   };
 
-  const twoDaysAgo = Date.now() - (2 * 24 * 60 * 60 * 1000);
+  const isToday = (timestamp: number) => {
+    const d = new Date(timestamp);
+    const today = new Date();
+    return d.getDate() === today.getDate() &&
+           d.getMonth() === today.getMonth() &&
+           d.getFullYear() === today.getFullYear();
+  };
+
+  const isYesterday = (timestamp: number) => {
+    const d = new Date(timestamp);
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return d.getDate() === yesterday.getDate() &&
+           d.getMonth() === yesterday.getMonth() &&
+           d.getFullYear() === yesterday.getFullYear();
+  };
+
+  const activeOrders = orders.filter(o => 
+    o.status !== 'delivered' && 
+    o.status !== 'cancelled' && 
+    isToday(o.timestamp)
+  );
+
   const historyOrders = orders.filter(o => {
-    const isHistory = (o.status === 'delivered' || o.status === 'cancelled') && o.timestamp >= twoDaysAgo;
-    if (!historySearch) return isHistory;
+    const isRelevant = (o.status === 'delivered' || o.status === 'cancelled' || !isToday(o.timestamp));
+    if (!isRelevant) return false;
+    
+    // Only last 2 days
+    const isRecent = isToday(o.timestamp) || isYesterday(o.timestamp);
+    if (!isRecent) return false;
+
+    if (!historySearch) return true;
     const searchMatch = o.id.includes(historySearch) || o.customerPhone.includes(historySearch) || o.customerName.toLowerCase().includes(historySearch.toLowerCase());
-    return isHistory && searchMatch;
+    return searchMatch;
   });
-  const activeOrders = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled');
+
+  const groupedHistory = useMemo(() => {
+    return {
+      today: historyOrders.filter(o => isToday(o.timestamp)),
+      yesterday: historyOrders.filter(o => isYesterday(o.timestamp))
+    };
+  }, [historyOrders]);
 
   const stats = useMemo(() => {
-    const today = new Date().setHours(0,0,0,0);
-    const todayOrders = orders.filter(o => o.timestamp >= today);
+    const todayOrders = orders.filter(o => isToday(o.timestamp));
     return {
       totalOrders: orders.length,
       totalRevenue: orders.reduce((a, b) => a + b.total, 0),
@@ -2466,11 +2676,17 @@ function AdminScreen() {
             <Clock className="w-3.5 h-3.5" />
             <span className="text-[10px] font-black uppercase tracking-widest">Kitchen Status</span>
           </div>
-          <div className="flex items-center gap-2">
+          <button 
+            onClick={toggleKitchenStatus}
+            disabled={isStatusUpdating}
+            className={`flex items-center gap-2 group transition-opacity ${isStatusUpdating ? 'opacity-50' : 'opacity-100'}`}
+          >
             <span className="font-display text-lg text-secondary">{currentKitchenName}</span>
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[10px] font-black text-green-600 uppercase tracking-widest">Open</span>
-          </div>
+            <div className={`w-2 h-2 rounded-full ${isKitchenOpen ? 'bg-green-500 animate-pulse' : 'bg-red-50'}`} />
+            <span className={`text-[10px] font-black uppercase tracking-widest ${isKitchenOpen ? 'text-green-600' : 'text-slate-400'}`}>
+              {isKitchenOpen ? 'Open' : 'Closed'}
+            </span>
+          </button>
         </div>
 
         <button 
@@ -2522,11 +2738,30 @@ function AdminScreen() {
                 </button>
               ))}
               <div className="h-px bg-slate-100 my-1" />
+              <div className="px-4 py-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Shop Status</span>
+                  <span className={`text-[9px] font-black uppercase ${isKitchenOpen ? 'text-green-500' : 'text-red-500'}`}>
+                    {isKitchenOpen ? 'Open' : 'Closed'}
+                  </span>
+                </div>
+                <button 
+                  onClick={toggleKitchenStatus}
+                  disabled={isStatusUpdating}
+                  className={`w-full h-10 rounded-xl transition-all relative flex items-center px-1 ${isKitchenOpen ? 'bg-green-500 shadow-lg shadow-green-500/20' : 'bg-slate-200'}`}
+                >
+                  <div className={`w-8 h-8 rounded-lg bg-white shadow-sm transition-all flex items-center justify-center ${isKitchenOpen ? 'ml-auto' : 'ml-0'}`}>
+                    <Store className={`w-4 h-4 ${isKitchenOpen ? 'text-green-500' : 'text-slate-400'}`} />
+                  </div>
+                </button>
+              </div>
+
+              <div className="h-px bg-slate-100 my-1" />
               <button 
                 onClick={handleAdminLogout}
-                className="w-full px-4 py-3 flex items-center gap-3 text-sm font-bold text-red-500 hover:bg-red-50"
+                className="w-full px-4 py-3 flex items-center gap-3 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors"
               >
-                <Trash2 className="w-4 h-4" />
+                <LogOut className="w-5 h-5" />
                 Logout
               </button>
             </motion.div>
@@ -2578,14 +2813,14 @@ function AdminScreen() {
               <div className="space-y-4">
                 {isOrdersLoading ? (
                   [1, 2].map(i => <OrderCardSkeleton key={i} />)
-                ) : orders.filter(o => o.status === 'pending').length > 0 ? (
-                  orders.filter(o => o.status === 'pending').map(order => (
+                ) : activeOrders.filter(o => o.status === 'pending').length > 0 ? (
+                  activeOrders.filter(o => o.status === 'pending').map(order => (
                     <div key={order.id}>
                       <AdminOrderCard order={order} onUpdate={updateOrderStatus} onView={setSelectedOrder} />
                     </div>
                   ))
                 ) : (
-                  <p className="text-center py-4 text-xs font-bold text-slate-300 italic">No new arrivals</p>
+                  <p className="text-center py-4 text-xs font-bold text-slate-300 italic">No new arrivals today</p>
                 )}
               </div>
             </div>
@@ -2599,8 +2834,8 @@ function AdminScreen() {
               <div className="space-y-4">
                 {isOrdersLoading ? (
                   [1].map(i => <OrderCardSkeleton key={i} />)
-                ) : orders.filter(o => o.status === 'preparing').length > 0 ? (
-                  orders.filter(o => o.status === 'preparing').map(order => (
+                ) : activeOrders.filter(o => o.status === 'preparing').length > 0 ? (
+                  activeOrders.filter(o => o.status === 'preparing').map(order => (
                     <div key={order.id}>
                       <AdminOrderCard order={order} onUpdate={updateOrderStatus} onView={setSelectedOrder} />
                     </div>
@@ -2618,8 +2853,8 @@ function AdminScreen() {
                 <div className="flex-1 h-px border-t-2 border-dashed border-slate-100" />
               </div>
               <div className="space-y-4">
-                {orders.filter(o => o.status === 'on-the-way').length > 0 ? (
-                  orders.filter(o => o.status === 'on-the-way').map(order => (
+                {activeOrders.filter(o => o.status === 'on-the-way').length > 0 ? (
+                  activeOrders.filter(o => o.status === 'on-the-way').map(order => (
                     <div key={order.id}>
                       <AdminOrderCard order={order} onUpdate={updateOrderStatus} onView={setSelectedOrder} />
                     </div>
@@ -2632,28 +2867,29 @@ function AdminScreen() {
 
             {/* Recently Delivered Section */}
             <div>
-              <div className="flex items-center gap-2 mb-6">
-                <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] whitespace-nowrap">delivered</span>
+              <div className="flex items-center gap-1.5 mb-6">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] whitespace-nowrap">delivered today</span>
                 <div className="flex-1 h-px border-t-2 border-dashed border-slate-100" />
               </div>
               <div className="space-y-4">
                 {isOrdersLoading ? (
                   [1, 2].map(i => <OrderCardSkeleton key={i} />)
-                ) : historyOrders.length > 0 ? (
-                  historyOrders.map(order => (
+                ) : groupedHistory.today.length > 0 ? (
+                  groupedHistory.today.map(order => (
                     <div key={order.id}>
                       <AdminOrderCard order={order} onUpdate={updateOrderStatus} onView={setSelectedOrder} />
                     </div>
                   ))
                 ) : (
-                  <p className="text-center py-4 text-xs font-bold text-slate-300 italic">No completions in last 2 days</p>
+                  <p className="text-center py-4 text-xs font-bold text-slate-300 italic">No completions today yet</p>
                 )}
               </div>
             </div>
           </div>
         ) : activeTab === 'history' ? (
-          <div className="space-y-4 pb-4">
-            <div className="relative group mb-6">
+          <div className="space-y-6 pb-20">
+            <div className="relative group">
               <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
                 <Search className="w-4 h-4 text-secondary/30 group-focus-within:text-primary transition-colors" />
               </div>
@@ -2665,33 +2901,56 @@ function AdminScreen() {
                 className="w-full bg-white border-2 border-slate-50 focus:border-primary/20 rounded-2xl py-3 pl-10 pr-4 text-xs font-bold transition-all outline-none text-ink placeholder:text-slate-400"
               />
             </div>
-            
-            <div className="p-3 bg-primary/5 rounded-2xl border border-primary/10 mb-4 text-center">
-               <p className="text-[10px] font-black text-primary uppercase tracking-widest">Showing orders from last 2 days</p>
-            </div>
-            
-            {historyOrders.length > 0 ? historyOrders.map(order => (
-              <div key={order.id} className="bg-white border-2 border-slate-50 p-4 rounded-2xl opacity-80 grayscale-[0.5]">
-                 <div className="flex justify-between items-center">
-                   <div>
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> {order.time}
-                     </p>
-                     <h4 className="font-display text-lg text-secondary">#{order.id.slice(0, 8)}</h4>
-                     <p className="text-xs font-bold text-slate-500">{order.customerName}</p>
-                   </div>
-                   <div className="text-right">
-                     <p className="font-display text-primary text-xl">₹{order.total}</p>
-                     <button onClick={() => setSelectedOrder(order)} className="text-[10px] font-black text-secondary uppercase tracking-widest mt-1 hover:underline">Details</button>
-                   </div>
-                 </div>
+
+            {/* Today's History */}
+            {groupedHistory.today.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Today</span>
+                  <div className="flex-1 h-px bg-primary/10" />
+                </div>
+                <div className="space-y-3">
+                  {groupedHistory.today.map(order => (
+                    <HistoryOrderCard key={order.id} order={order} onView={setSelectedOrder} />
+                  ))}
+                </div>
               </div>
-            )) : (
-              historyOrders.length === 0 && <div className="py-20 text-center opacity-40 font-display">History is clear</div>
+            )}
+
+            {/* Yesterday's History */}
+            {groupedHistory.yesterday.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Yesterday</span>
+                  <div className="flex-1 h-px bg-slate-100" />
+                </div>
+                <div className="space-y-3">
+                  {groupedHistory.yesterday.map(order => (
+                    <HistoryOrderCard key={order.id} order={order} onView={setSelectedOrder} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {historyOrders.length === 0 && (
+              <div className="py-20 text-center flex flex-col items-center gap-4">
+                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-200">
+                    <Clock className="w-8 h-8" />
+                 </div>
+                 <p className="text-sm font-bold text-slate-300 italic">No order history for last 2 days</p>
+              </div>
             )}
           </div>
         ) : activeTab === 'menu' ? (
           <div className="space-y-6 pb-20">
+             {/* Header */}
+             <div className="flex justify-between items-center mb-6 px-1">
+               <div>
+                  <h2 className="font-display text-2xl text-secondary">Kitchen Menu</h2>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">Manage items & availability</p>
+               </div>
+             </div>
+
              {/* Add Item Trigger */}
              <button 
                onClick={() => setShowAddItemForm(true)}
@@ -2790,56 +3049,63 @@ function AdminScreen() {
                        </div>
                      ))
                    ) : (
-                     menuItems.filter(i => i.category === section.cat).map(item => (
-                       <div key={item.id} className="bg-white p-5 rounded-[28px] shadow-sm border border-slate-50 flex flex-col gap-4">
-                         <div className="flex items-center justify-between">
-                           <div className="flex-1 min-w-0 mr-4">
-                             <div className="flex items-center gap-2">
-                               <input 
-                                  type="text" value={item.name} 
-                                  onChange={e => updateItemName(item.id, e.target.value)}
-                                  className="font-display text-base text-secondary bg-transparent outline-none w-full truncate"
-                               />
-                               {(item.category === 'dry_sabji' || item.category === 'gravy_sabji') && (
-                                 <span className="text-[8px] font-black uppercase bg-slate-50 text-slate-300 px-1.5 py-0.5 rounded leading-none shrink-0">{item.thali_type}</span>
-                               )}
-                             </div>
-                             {section.cat !== 'dry_sabji' && section.cat !== 'gravy_sabji' && (
-                               <div className="flex items-center gap-1.5 mt-1">
-                                 <span className="text-[10px] font-bold text-slate-300">₹</span>
-                                 <input 
-                                   type="text" 
-                                   inputMode="numeric"
-                                   value={item.price === 0 ? '' : item.price} 
-                                   onChange={e => {
-                                     const val = e.target.value.replace(/\D/g, '');
-                                     updatePrice(item.id, val === '' ? 0 : Number(val));
-                                   }}
-                                   placeholder="0"
-                                   className="bg-transparent text-sm font-black text-primary outline-none w-16"
-                                 />
-                               </div>
-                             )}
-                           </div>
-                           <div className="flex items-center gap-3 shrink-0">
-                             {section.cat !== 'thali' && (
-                               <button 
-                                 onClick={() => deleteItem(item.id)}
-                                 className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-50 text-red-500 active:scale-95 transition-all hover:bg-red-100"
-                               >
-                                  <Trash2 className="w-4 h-4" />
-                               </button>
-                             )}
-                             <button 
-                               onClick={() => toggleMenuItem(item.id)}
-                               className={`w-12 h-6 rounded-full transition-all relative shadow-inner ${item.available ? 'bg-primary' : 'bg-slate-200'}`}
-                             >
-                               <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${item.available ? 'left-7' : 'left-1'}`} />
-                             </button>
-                           </div>
-                         </div>
-                       </div>
-                     ))
+                     <>
+                        {menuItems.filter(i => i.category === section.cat).map(item => (
+                          <div key={item.id} className="bg-white p-5 rounded-[28px] shadow-sm border border-slate-50 flex flex-col gap-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0 mr-4">
+                                <div className="flex items-center gap-2">
+                                  <input 
+                                     type="text" value={item.name} 
+                                     onChange={e => updateItemName(item.id, e.target.value)}
+                                     className="font-display text-base text-secondary bg-transparent outline-none w-full truncate"
+                                  />
+                                  {(item.category === 'dry_sabji' || item.category === 'gravy_sabji') && (
+                                    <span className="text-[8px] font-black uppercase bg-slate-50 text-slate-300 px-1.5 py-0.5 rounded leading-none shrink-0">{item.thali_type}</span>
+                                  )}
+                                </div>
+                                {section.cat !== 'dry_sabji' && section.cat !== 'gravy_sabji' && (
+                                  <div className="flex items-center gap-1.5 mt-1">
+                                    <span className="text-[10px] font-bold text-slate-300">₹</span>
+                                    <input 
+                                      type="text" 
+                                      inputMode="numeric"
+                                      value={item.price === 0 ? '' : item.price} 
+                                      onChange={e => {
+                                        const val = e.target.value.replace(/\D/g, '');
+                                        updatePrice(item.id, val === '' ? 0 : Number(val));
+                                      }}
+                                      placeholder="0"
+                                      className="bg-transparent text-sm font-black text-primary outline-none w-16"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                {section.cat !== 'thali' && (
+                                  <button 
+                                    onClick={() => deleteItem(item.id)}
+                                    className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-50 text-red-500 active:scale-95 transition-all hover:bg-red-100"
+                                  >
+                                     <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                                <button 
+                                  onClick={() => toggleMenuItem(item.id)}
+                                  className={`w-12 h-6 rounded-full transition-all relative shadow-inner ${item.available ? 'bg-primary' : 'bg-slate-200'}`}
+                                >
+                                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${item.available ? 'left-7' : 'left-1'}`} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {menuItems.filter(i => i.category === section.cat).length === 0 && (
+                          <div className="py-10 text-center border-2 border-dashed border-slate-50 rounded-[28px] opacity-40">
+                             <p className="text-[10px] font-black uppercase tracking-[0.2em]">No items in {section.title}</p>
+                          </div>
+                        )}
+                     </>
                    )}
                  </div>
                </section>

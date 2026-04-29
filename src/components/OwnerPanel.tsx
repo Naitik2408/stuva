@@ -26,6 +26,7 @@ interface Kitchen {
   image_url: string;
   adminPhone: string;
   is_active: boolean;
+  is_open?: boolean;
   adminCount?: number;
   subscription_expires_at?: string;
 }
@@ -167,6 +168,26 @@ export default function OwnerPanel() {
     }
   };
 
+  const toggleKitchenOpenStatus = async (id: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('kitchens')
+        .update({ is_open: !currentStatus })
+        .eq('id', id);
+      
+      if (error) {
+        if (error.code === '42703' || error.message.includes('is_open')) {
+          alert("The 'is_open' column is missing in your kitchens table. Please add it to enable this feature.");
+          return;
+        }
+        throw error;
+      };
+      fetchKitchens();
+    } catch (err) {
+      console.error('Error toggling kitchen open status:', err);
+    }
+  };
+
   const updateSubscriptionExpiry = async () => {
     if (!selectedKitchenForSub || !newExpiryDate) return;
     try {
@@ -208,7 +229,7 @@ export default function OwnerPanel() {
           
           if (fallbackError) throw fallbackError;
           
-          const formatted = (fallbackData || []).map(k => ({
+          const formatted = (fallbackData || []).map((k: any) => ({
             id: k.id,
             name: k.name,
             slug: k.slug,
@@ -216,6 +237,7 @@ export default function OwnerPanel() {
             image_url: k.image_url,
             adminPhone: k.kitchen_admins?.[0]?.phone || 'No Admin',
             is_active: k.is_active,
+            is_open: k.is_open,
             adminCount: k.kitchen_admins?.length || 0,
             subscription_expires_at: undefined
           }));
@@ -234,6 +256,7 @@ export default function OwnerPanel() {
         image_url: k.image_url,
         adminPhone: k.kitchen_admins?.[0]?.phone || 'No Admin',
         is_active: k.is_active,
+        is_open: k.is_open,
         adminCount: k.kitchen_admins?.length || 0,
         thali_type: k.thali_type || 'both',
         subscription_expires_at: k.subscription_expires_at
@@ -568,13 +591,23 @@ export default function OwnerPanel() {
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center justify-between">
                             <h4 className="text-xl font-display text-secondary">{k.name}</h4>
-                            <button 
-                              onClick={() => toggleKitchenStatus(k.id, k.is_active)}
-                              className={`flex items-center gap-2 px-3 py-1 rounded-full transition-all ${k.is_active ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}
-                            >
-                              <div className={`w-1.5 h-1.5 rounded-full ${k.is_active ? 'bg-green-500' : 'bg-red-500'}`} />
-                              <span className="text-[10px] font-black uppercase tracking-widest">{k.is_active ? 'Active' : 'Deactivated'}</span>
-                            </button>
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => toggleKitchenOpenStatus(k.id, k.is_open ?? true)}
+                                className={`flex items-center gap-2 px-3 py-1 rounded-full transition-all ${k.is_open !== false ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-50 text-slate-400 border border-slate-100'}`}
+                                title={k.is_open !== false ? 'Shop is Open' : 'Shop is Closed'}
+                              >
+                                <Store className={`w-3 h-3 ${k.is_open !== false ? 'text-indigo-500' : 'text-slate-300'}`} />
+                                <span className="text-[10px] font-black uppercase tracking-widest">{k.is_open !== false ? 'Open' : 'Closed'}</span>
+                              </button>
+                              <button 
+                                onClick={() => toggleKitchenStatus(k.id, k.is_active)}
+                                className={`flex items-center gap-2 px-3 py-1 rounded-full transition-all ${k.is_active ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}
+                              >
+                                <div className={`w-1.5 h-1.5 rounded-full ${k.is_active ? 'bg-green-500' : 'bg-red-500'}`} />
+                                <span className="text-[10px] font-black uppercase tracking-widest">{k.is_active ? 'Active' : 'Deactivated'}</span>
+                              </button>
+                            </div>
                           </div>
                           <p className="text-xs font-bold text-slate-400">/{k.slug}</p>
                           <p className="text-[11px] text-slate-400 line-clamp-1 italic">{k.description}</p>
