@@ -172,12 +172,12 @@ export default function OwnerPanel() {
     try {
       const { error } = await supabase
         .from('kitchens')
-        .update({ is_open: !currentStatus })
+        .update({ is_active: !currentStatus })
         .eq('id', id);
       
       if (error) {
-        if (error.code === '42703' || error.message.includes('is_open')) {
-          alert("The 'is_open' column is missing in your kitchens table. Please add it to enable this feature.");
+        if (error.code === '42703' || error.message.includes('is_active')) {
+          alert("Database Error: Status column missing.");
           return;
         }
         throw error;
@@ -237,7 +237,7 @@ export default function OwnerPanel() {
             image_url: k.image_url,
             adminPhone: k.kitchen_admins?.[0]?.phone || 'No Admin',
             is_active: k.is_active,
-            is_open: k.is_open,
+            is_open: k.is_active, // Use is_active as fallback for is_open
             adminCount: k.kitchen_admins?.length || 0,
             subscription_expires_at: undefined
           }));
@@ -256,7 +256,7 @@ export default function OwnerPanel() {
         image_url: k.image_url,
         adminPhone: k.kitchen_admins?.[0]?.phone || 'No Admin',
         is_active: k.is_active,
-        is_open: k.is_open,
+        is_open: k.is_active, // Unified status using is_active field from schema
         adminCount: k.kitchen_admins?.length || 0,
         thali_type: k.thali_type || 'both',
         subscription_expires_at: k.subscription_expires_at

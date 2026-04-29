@@ -309,7 +309,7 @@ function AppContent() {
           deliveryTime: k.delivery_time,
           description: k.description,
           image: k.image_url,
-          isOpen: k.is_open ?? true // Default to true if column missing or null
+          isOpen: k.is_active ?? true // Use is_active as the master status
         })));
       }
     } catch (err) {
@@ -1162,21 +1162,11 @@ function HomeScreen({ isLoggedIn, kitchens, currentUser, isLoading, onLogout }: 
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <button 
-                onClick={() => navigate('/orders')}
-                className="w-12 h-12 bg-white shadow-xl shadow-ink/5 rounded-2xl flex items-center justify-center border border-slate-50 active:scale-90 transition-transform relative"
-              >
-                <Clock className="w-5 h-5 text-secondary" />
-              </button>
               <div 
-                onClick={onLogout}
+                onClick={() => navigate('/orders')}
                 className="w-12 h-12 rounded-2xl bg-white border-2 border-primary/20 p-1 shadow-sm cursor-pointer active:scale-95 transition-transform group relative"
-                title="Logout"
               >
                 <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.name || 'Felix'}`} className="w-full h-full rounded-xl" alt="profile" />
-                <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full border-2 border-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                   <LogOut className="w-2.5 h-2.5 text-white" />
-                </div>
               </div>
             </div>
           </header>
@@ -1286,12 +1276,6 @@ function KitchenCard({ kitchen, onClick }: { kitchen: Kitchen, onClick: () => vo
         <div className="p-3 flex-1 pb-4">
           <div className="flex justify-between items-start gap-2">
             <h3 className={`font-display text-[15px] transition-colors leading-tight ${isClosed ? 'text-slate-400' : 'text-primary group-hover:text-ink'}`}>{kitchen.name}</h3>
-            {!isClosed && kitchen.rating && (
-              <div className="flex items-center gap-0.5 text-amber-500">
-                <Star className="w-3 h-3 fill-current" />
-                <span className="text-[10px] font-black">{kitchen.rating}</span>
-              </div>
-            )}
           </div>
           <p className="text-[10px] text-slate-400 font-medium mt-1 line-clamp-1">{kitchen.description}</p>
         </div>
@@ -1410,21 +1394,11 @@ function MenuScreen({
         )}
         {isLoggedIn ? (
           <div className="flex items-center gap-2">
-            <button 
-              onClick={() => navigate('/orders')}
-              className="w-10 h-10 bg-white shadow-lg rounded-xl flex items-center justify-center text-secondary active:scale-90 transition-transform border border-slate-100"
-            >
-              <Clock className="w-5 h-5" />
-            </button>
             <div 
-              onClick={onLogout}
+              onClick={() => navigate('/orders')}
               className="w-10 h-10 rounded-xl bg-white border-2 border-primary/20 p-0.5 shadow-sm cursor-pointer active:scale-95 transition-transform group relative"
-              title="Logout"
             >
               <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.name || 'Felix'}`} className="w-full h-full rounded-lg" alt="profile" />
-              <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                 <LogOut className="w-2 h-2 text-white" />
-              </div>
             </div>
           </div>
         ) : (
@@ -2187,10 +2161,27 @@ function AdminScreen() {
     }
   };
 
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
+
   useEffect(() => {
     let channel: any;
     
     if (adminStep === 'DASHBOARD' && currentKitchenId) {
+      // One-time cleanup for old orders (older than 2 days) to keep DB clean and performance high
+      const cleanupOldOrders = async () => {
+        try {
+          const twoDaysAgoIso = new Date(Date.now() - (2 * 24 * 60 * 60 * 1000)).toISOString();
+          await supabase
+            .from('orders')
+            .delete()
+            .eq('kitchen_id', currentKitchenId)
+            .lt('created_at', twoDaysAgoIso);
+        } catch (e) {
+          console.warn("Minor cleanup error:", e);
+        }
+      };
+      
+      cleanupOldOrders();
       fetchAdminOrders(currentKitchenId);
       
       // Real-time subscription for new orders
@@ -2207,14 +2198,22 @@ function AdminScreen() {
           (payload) => {
             if (payload.eventType === 'INSERT') {
               const newOrder = mapOrder(payload.new);
-              setOrders(prev => [newOrder, ...prev]);
-              // Basic browser notification sound could be added here
+              setOrders(prev => {
+                // Prevent duplicate orders from race conditions
+                if (prev.some(o => o.id === newOrder.id)) return prev;
+                return [newOrder, ...prev];
+              });
+              // Play a subtle notification sound for new orders if needed
             } else if (payload.eventType === 'UPDATE') {
-              setOrders(prev => prev.map(o => o.id === payload.new.id ? mapOrder(payload.new) : o));
+              setOrders(prev => prev.map(o => o.id === payload.new.id ? { ...o, ...mapOrder(payload.new) } : o));
+            } else if (payload.eventType === 'DELETE') {
+              setOrders(prev => prev.filter(o => o.id !== payload.old.id));
             }
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          setIsRealtimeConnected(status === 'SUBSCRIBED');
+        });
     }
 
     return () => {
@@ -2239,15 +2238,7 @@ function AdminScreen() {
   const fetchAdminOrders = async (kitchenId: string) => {
     setIsOrdersLoading(true);
     try {
-      // 1. Cleanup old orders (older than 2 days)
-      const twoDaysAgoIso = new Date(Date.now() - (2 * 24 * 60 * 60 * 1000)).toISOString();
-      await supabase
-        .from('orders')
-        .delete()
-        .eq('kitchen_id', kitchenId)
-        .lt('created_at', twoDaysAgoIso);
-
-      // 2. Fetch current orders
+      // Fetch current orders - cleanup is now handled in useEffect for better performance
       const { data, error } = await supabase
         .from('orders')
         .select('*')
@@ -2276,24 +2267,24 @@ function AdminScreen() {
     try {
       const cleanPhone = adminPhone.slice(-10);
       
-      // 1. Try to get kitchen ID for this phone with is_open
+      // 1. Try to get kitchen ID for this phone with is_active
       let data: any[] | null = null;
       let error: any = null;
       
       const result = await supabase
         .from('kitchen_admins')
-        .select('kitchen_id, phone, kitchens(name, is_open)');
+        .select('kitchen_id, phone, kitchens(name, is_active)');
       
-      data = result.data;
-      error = result.error;
-      
-      // If error suggests missing column, fallback to just name
-      if (error && (error.message.includes('is_open') || error.code === '42703')) {
+      if (result.error && (result.error.code === '42703' || result.error.message.includes('is_active'))) {
+        // Fallback fetch without status if column is missing (though is_active should exist)
         const fallback = await supabase
           .from('kitchen_admins')
           .select('kitchen_id, phone, kitchens(name)');
         data = fallback.data;
         error = fallback.error;
+      } else {
+        data = result.data;
+        error = result.error;
       }
       
       if (error) throw error;
@@ -2310,17 +2301,23 @@ function AdminScreen() {
           const k = Array.isArray(adminData.kitchens) ? adminData.kitchens[0] : adminData.kitchens;
           if (k) {
             setCurrentKitchenName(k.name);
-            setIsKitchenOpen((k as any).is_open ?? true);
+            setIsKitchenOpen((k as any).is_active ?? true);
           }
         }
-        fetchAdminMenuItems(adminData.kitchen_id);
-        fetchAdminOrders(adminData.kitchen_id);
+        // Use Promise.all for parallel fetching to improve performance
+        await Promise.all([
+          fetchAdminMenuItems(adminData.kitchen_id),
+          fetchAdminOrders(adminData.kitchen_id)
+        ]);
       } else {
         console.error('No admin found for matched phone');
         setError("Admin access failed. Please re-login.");
       }
-    } catch (err) {
-      console.error('Error fetching admin context:', err);
+    } catch (err: any) {
+      // Only log if it's not a common expected error we handled
+      if (err.code !== '42703') {
+        console.error('Error fetching admin context:', err);
+      }
     }
   };
 
@@ -2355,12 +2352,12 @@ function AdminScreen() {
       const newStatus = !isKitchenOpen;
       const { error } = await supabase
         .from('kitchens')
-        .update({ is_open: newStatus })
+        .update({ is_active: newStatus })
         .eq('id', currentKitchenId);
       
       if (error) {
-        if (error.code === '42703' || error.message.includes('is_open')) {
-          alert("Database Error: The 'is_open' column is missing in your kitchens table. Please add it to enable this feature.");
+        if (error.code === '42703' || error.message.includes('is_active')) {
+          setError("Feature unavailable: Database status column error.");
           return;
         }
         throw error;
@@ -2368,7 +2365,6 @@ function AdminScreen() {
       setIsKitchenOpen(newStatus);
     } catch (err) {
       console.error('Error toggling kitchen status:', err);
-      setError("Failed to update kitchen status.");
     } finally {
       setIsStatusUpdating(false);
     }
@@ -2773,22 +2769,28 @@ function AdminScreen() {
       {activeTab === 'orders' && (
         <div className="px-6 py-4 flex gap-4 overflow-x-auto no-scrollbar shrink-0">
           <div className="bg-white p-4 rounded-3xl border-2 border-slate-50 min-w-[140px] shadow-sm relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-2 opacity-10">
+            <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-green-50 px-2 py-0.5 rounded-full z-10">
+              <div className={`w-1.5 h-1.5 rounded-full ${isRealtimeConnected ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`} />
+              <span className={`text-[7px] font-black uppercase ${isRealtimeConnected ? 'text-green-600' : 'text-slate-400'} tracking-widest`}>
+                {isRealtimeConnected ? 'Live Sync' : 'Connecting...'}
+              </span>
+            </div>
+            <div className="absolute top-0 right-0 p-2 opacity-5 pointer-events-none">
               <ShoppingBag className="w-12 h-12" />
             </div>
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Active Now</p>
             <p className="text-2xl font-display text-secondary">{activeOrders.length}</p>
             <div className="mt-2 w-full bg-slate-50 h-1 rounded-full overflow-hidden">
-              <div className="bg-primary h-full rounded-full" style={{ width: '65%' }} />
+              <div className="bg-primary h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min(100, (activeOrders.length / 5) * 100)}%` }} />
             </div>
           </div>
           
           <div className="bg-white p-4 rounded-3xl border-2 border-slate-50 min-w-[140px] shadow-sm relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-2 opacity-10">
+            <div className="absolute top-0 right-0 p-2 opacity-5 pointer-events-none">
               <CheckCircle2 className="w-12 h-12" />
             </div>
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Delivered</p>
-            <p className="text-2xl font-display text-green-600">{orders.filter(o => o.status === 'delivered').length}</p>
+            <p className="text-2xl font-display text-green-600">{orders.filter(o => o.status === 'delivered' && isToday(o.timestamp)).length}</p>
             <div className="mt-2 text-[8px] font-bold text-slate-300">Great job today!</div>
           </div>
         </div>
